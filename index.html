@@ -1179,8 +1179,6 @@ async function pollLiveStructure() {
     const d = await r.json();
     if (!d.xyz) return;
 
-    switchTab("structure");
-
     // If path changed, new relaxation started — reset frames
     if (d.path !== liveXYZPath) {
       trajFrames = [];
