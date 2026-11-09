@@ -594,7 +594,7 @@ select option { background: var(--bg3); }
       <div id="atom-tooltip" style="display:none;position:fixed;z-index:200;background:rgba(10,16,26,0.92);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-family:var(--font);font-size:10px;color:var(--text);pointer-events:none;white-space:nowrap;"></div>
       <div id="viewer-wrap">
         <div id="mol-viewer"></div>
-        <div class="viewer-hint">scroll=zoom  drag=rotate  shift+drag=pan</div>
+        <div class="viewer-hint">scroll=zoom  drag=rotate  ctrl+drag=pan</div>
         <div id="viewer-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:13px;">
           No structure found — run pipeline or check path1
         </div>
@@ -1209,6 +1209,8 @@ function init3Dmol() {
     const element = document.getElementById("mol-viewer");
     if (!element) return;
     viewer = $3Dmol.createViewer(element, {backgroundColor: "#0a0e14"});
+    // Suppress context menu so right-drag translates without menu interrupting
+    element.addEventListener("contextmenu", e => e.preventDefault());
     viewer.render();
   } catch (e) {
     console.warn("3Dmol init failed:", e);
