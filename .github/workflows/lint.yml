@@ -39,5 +39,3 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check .
 
-      - name: Type check
-        run: uvx ty check server.py

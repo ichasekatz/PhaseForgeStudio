@@ -1383,9 +1383,11 @@ def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float =
 
     pairs = list(combinations(all_els, 2))
 
+    _n_ticks = 5
     for el_a, el_b in pairs:
         fixed = {el: 0.0 for el in all_els if el not in (el_a, el_b)}
-        x_max = 1.0 - sum(fixed.values()) - eps
+        metal_site_fraction = 1.0 - sum(fixed.values())
+        x_max = metal_site_fraction - eps
         conds: dict = {
             v.N: 1,
             v.P: 101325,
@@ -1395,32 +1397,42 @@ def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float =
         for el, frac in fixed.items():
             conds[v.X(el)] = frac
 
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(10, 7))
         try:
             binplot(dbf, comps, phases, conds, plot_kwargs={"ax": ax})
         except (ValueError, KeyError) as exc:
             if "need at least one array" in str(exc) or "degrees of freedom" in str(exc).lower():
-                ax.text(0.5, 0.5, "No two-phase boundaries found", ha="center", va="center", transform=ax.transAxes, color="gray")
+                ax.clear()
+                ax.set_xlim(0, metal_site_fraction)
+                ax.set_ylim(t_min, t_max)
+                ax.text(
+                    metal_site_fraction / 2,
+                    (t_min + t_max) / 2,
+                    "No two-phase boundaries found",
+                    ha="center",
+                    va="center",
+                )
             else:
                 plt.close(fig)
                 raise
 
-        pair_label = f"{el_a}–{el_b}"
-        sys_label = "–".join(all_els)
-        title = pair_label if len(all_els) == 2 else f"{pair_label} (in {sys_label})"
-        metal_site_fraction = 1.0 - sum(fixed.values())
-        tick_vals = [i * metal_site_fraction / 4 for i in range(5)]
-        tick_labels = [f"{i / 4:.2f}" for i in range(5)]
+        tick_vals = [i * metal_site_fraction / (_n_ticks - 1) for i in range(_n_ticks)]
+        tick_labels = [f"{i / (_n_ticks - 1):.2f}" for i in range(_n_ticks)]
         ax.set_xticks(tick_vals)
-        ax.set_xticklabels(tick_labels)
-        ax.set_title(title)
-        ax.set_xlabel(f"X({el_b})")
-        ax.set_ylabel("Temperature (K)")
+        ax.set_xticklabels(tick_labels, fontsize=13)
+        ax.set_xlabel(
+            rf"Metal-site fraction $x_{{{el_b}}}$ in $({el_a}_{{1-x}}{el_b}_x)$",
+            fontsize=15,
+        )
+        ax.set_ylabel("Temperature (K)", fontsize=15)
+        sys_label = "–".join(all_els)
+        title = rf"$({el_a},{el_b})$ Pseudo-Binary Phase Diagram" if len(all_els) == 2 else rf"$({el_a},{el_b})$ section of {sys_label}"
+        ax.set_title(title, fontsize=17)
         fig.tight_layout()
 
         stem = f"{''.join(all_els)}_{el_a}{el_b}_phasediag"
         out = tdb_path.parent / f"{stem}.png"
-        fig.savefig(str(out), dpi=150, bbox_inches="tight")
+        fig.savefig(str(out), dpi=300, bbox_inches="tight")
         plt.close(fig)
         pair_pngs.append(out)
 
