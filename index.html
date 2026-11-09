@@ -1215,20 +1215,25 @@ function init3Dmol() {
   }
 }
 
+let _lastXYZText = null;
+let _lastXYZFormat = "xyz";
+
 function renderStructure(text, format) {
   if (!viewer) return;
   const empty = document.getElementById("viewer-empty");
   if (!text) { empty.style.display = "flex"; return; }
   empty.style.display = "none";
+  _lastXYZText = text;
+  _lastXYZFormat = format || "xyz";
   try {
     // Preserve camera between frames
     const savedView = viewer._hasContent && viewer.getView ? viewer.getView() : null;
     viewer.clear();
     viewer._hasContent = true;
     viewer.addModel(text, format || "xyz");
-    if (typeof viewer.setBondThresh === "function") viewer.setBondThresh(showBonds ? bondCutoff : 0);
+    applyBondCutoff(viewer.getModel(0), showBonds ? bondCutoff : 0);
     applyStyle();
-    if (showForces && format === "xyz") _renderForceArrowsFromXYZ(text);
+    if (showForces && (format === "xyz" || !format)) _renderForceArrowsFromXYZ(text);
     if (savedView) viewer.setView(savedView); else viewer.zoomTo();
     viewer.render();
     initAtomTooltip();
@@ -1259,13 +1264,18 @@ async function loadStructure() {
 function applyStyle() {
   if (!viewer) return;
   const style = document.getElementById("style-select").value;
+  const sphereStyle = { sphere: { radius: 0.35, colorscheme: "Jmol" } };
+  const stickStyle  = showBonds ? { stick: { radius: 0.08, colorscheme: "Jmol" } } : {};
   viewer.setStyle({});
-  if (style === "stick") viewer.setStyle({}, {stick: {}});
-  else if (style === "sphere") viewer.setStyle({}, {sphere: {scale: 0.4}});
-  else if (style === "ball+stick") viewer.setStyle({}, {stick: {radius: 0.15}, sphere: {scale: 0.3}});
-  else if (style === "surface") {
-    viewer.setStyle({}, {stick: {radius: 0.1}});
-    viewer.addSurface($3Dmol.SurfaceType.VDW, {opacity: 0.6});
+  if (style === "stick") {
+    viewer.setStyle({}, showBonds ? { stick: { radius: 0.12, colorscheme: "Jmol" } } : { stick: { radius: 0 } });
+  } else if (style === "sphere") {
+    viewer.setStyle({}, sphereStyle);
+  } else if (style === "ball+stick") {
+    viewer.setStyle({}, { ...sphereStyle, ...stickStyle });
+  } else if (style === "surface") {
+    viewer.setStyle({}, { ...sphereStyle, ...stickStyle });
+    viewer.addSurface($3Dmol.SurfaceType.VDW, { opacity: 0.6 });
   }
   viewer.render();
 }
@@ -1285,15 +1295,36 @@ let showBonds = true;
 let bondCutoff = 3.5;
 let showForces = false;
 
+function applyBondCutoff(model, cutoff) {
+  if (!model) return;
+  const atoms = model.selectedAtoms({});
+  atoms.forEach(atom => {
+    const keepB = [], keepO = [];
+    (atom.bonds || []).forEach((bIdx, j) => {
+      const other = atoms[bIdx];
+      if (!other) return;
+      const dx = atom.x - other.x, dy = atom.y - other.y, dz = atom.z - other.z;
+      if (Math.sqrt(dx*dx + dy*dy + dz*dz) <= cutoff) {
+        keepB.push(bIdx);
+        keepO.push((atom.bondOrder || [])[j] ?? 1);
+      }
+    });
+    atom.bonds = keepB;
+    atom.bondOrder = keepO;
+  });
+}
+
 function setShowBonds(val) {
   showBonds = val;
-  if (trajFrames.length) showFrame(trajIdx); else applyStyle();
+  if (trajFrames.length) showFrame(trajIdx);
+  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat);
+  else applyStyle();
 }
 
 function setBondCutoff(val) {
   bondCutoff = val;
   if (trajFrames.length) showFrame(trajIdx);
-  else if (viewer && typeof viewer.setBondThresh === "function") { viewer.setBondThresh(val); viewer.render(); }
+  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat);
 }
 
 function setShowForces(val) {
