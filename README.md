@@ -88,7 +88,9 @@ ssh -L 8080:localhost:8080 <hpc-host>
 ## Requirements
 
 - Python ≥ 3.11 (stdlib only — no extra Python deps for the server itself)
-- [`materialsframework`](https://github.com/dogusariturk/MaterialsFramework) in the active environment
+- [`MaterialsFramework`](https://github.com/dogusariturk/MaterialsFramework) — MLIP calculator + analyzer library
+- [`PhaseForge`](https://github.com/dogusariturk/PhaseForge) — CALPHAD TDB fitting layer
+- [`BLADE`](https://github.com/ichasekatz/BLADE) — SQS generation + MLIP relaxation pipeline that PhaseForge Studio fronts
 - `mcsqs` / `sqs2tdb` on `$PATH` (from [ATAT](https://www.brown.edu/Departments/Engineering/Labs/avdw/atat/))
 
 ## License

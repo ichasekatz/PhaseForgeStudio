@@ -1790,6 +1790,26 @@ async function onBrowserClick(relPath, kind, name) {
       preview.textContent = text.slice(0, 8000);
       preview.classList.add("visible");
     } catch {}
+    // Show generate phase diagram button
+    const existingBtn = document.getElementById("gen-phasediag-btn");
+    if (existingBtn) existingBtn.remove();
+    const btn = document.createElement("button");
+    btn.id = "gen-phasediag-btn";
+    btn.className = "btn";
+    btn.textContent = "⬡ Generate Phase Diagram";
+    btn.style.cssText = "margin:6px 0 2px 0;width:100%;";
+    btn.onclick = async () => {
+      btn.textContent = "Generating…";
+      btn.disabled = true;
+      try {
+        const r2 = await fetch(`/api/phase_diagram?path=${encodeURIComponent(relPath)}`);
+        const d = await r2.json();
+        if (d.error) { btn.textContent = `Error: ${d.error}`; btn.disabled = false; return; }
+        btn.textContent = `✓ ${d.pngs.length} diagram(s) saved`;
+        refreshAll();
+      } catch (e) { btn.textContent = "Failed"; btn.disabled = false; }
+    };
+    document.getElementById("tdb-preview").insertAdjacentElement("beforebegin", btn);
     return;
   }
   if (kind === "png") { openModal(fileUrl(relPath)); return; }

@@ -1202,15 +1202,82 @@ def _make_tracking_sqs2tdb() -> type:
 # Phase diagram generation
 # ---------------------------------------------------------------------------
 
+def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float = 3000.0) -> list[Path]:
+    """Generate phase diagram PNGs from a TDB file.
+
+    For a binary system (2 non-VA elements) produces one diagram.
+    For N>2 elements produces all C(N,2) pseudo-binary sections at x_other=0,
+    i.e. each binary sub-system of the full alloy.
+
+    Returns list of PNG paths written.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from pycalphad import Database, binplot, variables as v
+
+    dbf = Database(str(tdb_path))
+    phases = list(dbf.phases.keys())
+    # dbf.elements returns a frozenset including 'VA' and '/-'
+    all_els = sorted(e for e in dbf.elements if e not in ("VA", "/-", "/"))
+    if len(all_els) < 2:
+        return []
+    comps = all_els + ["VA"]
+
+    t_step = max(5.0, (t_max - t_min) / 200)
+    eps = 1e-3
+    written: list[Path] = []
+
+    # Generate all binary sub-systems
+    from itertools import combinations
+    pairs = list(combinations(all_els, 2))
+
+    for el_a, el_b in pairs:
+        # Fixed: all other elements set to 0 (pure binary sub-system)
+        fixed = {el: 0.0 for el in all_els if el not in (el_a, el_b)}
+        x_max = 1.0 - sum(fixed.values()) - eps
+        conds: dict = {
+            v.N: 1,
+            v.P: 101325,
+            v.T: (t_min, t_max, t_step),
+            v.X(el_b): (eps, x_max, x_max / 100),
+        }
+        for el, frac in fixed.items():
+            conds[v.X(el)] = frac
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        try:
+            binplot(dbf, comps, phases, conds, plot_kwargs={"ax": ax})
+        except (ValueError, KeyError) as exc:
+            if "need at least one array" in str(exc) or "degrees of freedom" in str(exc).lower():
+                ax.text(0.5, 0.5, "No two-phase boundaries found", ha="center", va="center",
+                        transform=ax.transAxes, color="gray")
+            else:
+                plt.close(fig)
+                raise
+
+        pair_label = f"{el_a}–{el_b}"
+        sys_label = "–".join(all_els)
+        title = f"{pair_label}" if len(all_els) == 2 else f"{pair_label} (in {sys_label})"
+        ax.set_title(title)
+        ax.set_xlabel(f"X({el_b})")
+        ax.set_ylabel("Temperature (K)")
+        fig.tight_layout()
+
+        stem = f"{''.join(all_els)}_{el_a}{el_b}_phase_diagram"
+        out = tdb_path.parent / f"{stem}.png"
+        fig.savefig(str(out), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        written.append(out)
+
+    return written
+
+
 def _generate_phase_diagrams(work_dir: Path, species: list[str], lattices: list[str], job: JobState) -> None:
-    """Generate binary phase diagrams from TDB files in work_dir using pycalphad."""
+    """Generate phase diagram PNGs from all TDB files in work_dir."""
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from pycalphad import Database, variables as v
-        from pycalphad.mapping import BinaryStrategy
-        from pycalphad.mapping.plotting import plot_binary
+        import matplotlib  # noqa: F401
+        from pycalphad import Database  # noqa: F401
     except ImportError as e:
         job.push_log(f"[studio] Phase diagram skipped: {e}")
         return
@@ -1222,35 +1289,14 @@ def _generate_phase_diagrams(work_dir: Path, species: list[str], lattices: list[
 
     for tdb_path in tdb_files:
         try:
-            dbf = Database(str(tdb_path))
-            phases = list(dbf.phases.keys())
-            # Read component names from TDB (uppercase, e.g. 'AL', 'NI', 'VA')
-            comps = [c for c in dbf.elements if c != "/-"]
-            if "VA" not in comps:
-                comps = comps + ["VA"]
-            non_va = [c for c in comps if c != "VA"]
-            if len(non_va) < 2:
-                job.push_log(f"[studio] Not enough components for binary diagram: {comps}")
-                continue
-            x_comp = non_va[1]
-            conds = {
-                v.X(x_comp): (0.01, 0.99, 0.02),
-                v.T: (300, 3000, 10),
-                v.P: 101325,
-            }
-            strategy = BinaryStrategy(dbf, comps, phases, conds)
-            strategy.generate_automatic_starting_points()
-            strategy.do_map()
-            fig, ax = plt.subplots(figsize=(8, 6))
-            plot_binary(strategy, ax=ax)
-            ax.set_title(f"{'–'.join(non_va)} Phase Diagram")
-            out = tdb_path.parent / f"{''.join(non_va)}_phase_diagram.png"
-            fig.savefig(str(out), dpi=150, bbox_inches="tight")
-            plt.close(fig)
-            job.push_log(f"[studio] Phase diagram saved: {out.name}")
+            pngs = _phase_diagram_from_tdb(tdb_path)
+            for p in pngs:
+                job.push_log(f"[studio] Phase diagram saved: {p.name}")
+            if not pngs:
+                job.push_log(f"[studio] Skipped {tdb_path.name}: < 2 components")
         except Exception as e:
             job.push_log(f"[studio] Phase diagram failed for {tdb_path.name}: {e}")
-            job.push_log(traceback.format_exc()[:1000])
+            job.push_log(traceback.format_exc()[:800])
 
 
 # ---------------------------------------------------------------------------
@@ -1430,6 +1476,26 @@ class StudioHandler(BaseHTTPRequestHandler):
             label = qs.get("label", [""])[0]
             curves = get_system_step_energies(_resolve(self.cfg, "path1"), label)
             self._json({"curves": curves})
+
+        elif path == "/api/phase_diagram":
+            # On-demand: generate diagrams for a TDB file given its path relative to path1
+            rel = qs.get("path", [""])[0]
+            path1 = _resolve(self.cfg, "path1")
+            tdb_path = (path1 / rel).resolve()
+            if not str(tdb_path).startswith(str(path1)) or not tdb_path.exists():
+                self._json({"error": "not found"}, 404)
+            else:
+                try:
+                    pngs = _phase_diagram_from_tdb(
+                        tdb_path,
+                        t_min=float(self.cfg.get("t_min", 300)),
+                        t_max=float(self.cfg.get("t_max", 3000)),
+                    )
+                    # Return relative paths from path1
+                    rel_pngs = [str(p.relative_to(path1)) for p in pngs]
+                    self._json({"ok": True, "pngs": rel_pngs})
+                except Exception as exc:
+                    self._json({"error": str(exc)}, 500)
 
         elif path == "/api/outputs":
             self._json(scan_outputs(_resolve(self.cfg, "path1")))
