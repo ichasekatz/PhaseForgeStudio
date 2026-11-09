@@ -1,6 +1,6 @@
 # PhaseForge Studio
 
-Browser-based dashboard for [MaterialsFramework](https://github.com/dogusariturk/MaterialsFramework) / BLADE / PhaseForge pipelines. Runs on HPC; access via SSH port forwarding. No npm, no build step — single Python file server + single HTML file frontend.
+Browser-based dashboard for [MaterialsFramework](https://github.com/dogusariturk/MaterialsFramework) / [BLADE](https://github.com/ichasekatz/BLADE) / [PhaseForge](https://github.com/dogusariturk/PhaseForge) pipelines. Runs on HPC; access via SSH port forwarding. No npm, no build step — single Python file server + single HTML file frontend.
 
 [![Tests](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/tests.yml/badge.svg)](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/tests.yml)
 [![Lint](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/lint.yml/badge.svg)](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/lint.yml)
