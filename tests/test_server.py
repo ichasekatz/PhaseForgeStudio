@@ -7,19 +7,14 @@ Integration tests that do require them are marked ``integration``.
 
 from __future__ import annotations
 
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Import server without executing the __main__ block.
-# server.py modifies sys.path / os.environ at module level, but all functions
-# under test are pure Python + stdlib/numpy.
-# ---------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).parent.parent))
-import server  # noqa: E402  (must come after sys.path insertion)
+from phaseforge_studio.filesystem import scan_energies
+from phaseforge_studio.structure import _poscar_to_xyz
+from phaseforge_studio.trajectory import _split_xyz_frames
 
 # ---------------------------------------------------------------------------
 # _split_xyz_frames
@@ -46,33 +41,33 @@ MULTI_FRAME = textwrap.dedent("""\
 
 
 def test_split_xyz_frames_single() -> None:
-    frames = server._split_xyz_frames(SINGLE_FRAME)
+    frames = _split_xyz_frames(SINGLE_FRAME)
     assert len(frames) == 1
     assert frames[0].startswith("3")
 
 
 def test_split_xyz_frames_multi() -> None:
-    frames = server._split_xyz_frames(MULTI_FRAME)
+    frames = _split_xyz_frames(MULTI_FRAME)
     assert len(frames) == 2
     assert frames[0].startswith("2")
     assert frames[1].startswith("2")
 
 
 def test_split_xyz_frames_empty() -> None:
-    assert server._split_xyz_frames("") == []
-    assert server._split_xyz_frames("\n\n") == []
+    assert _split_xyz_frames("") == []
+    assert _split_xyz_frames("\n\n") == []
 
 
 def test_split_xyz_frames_ignores_garbage_header() -> None:
     text = "not_a_number\n" + SINGLE_FRAME
-    frames = server._split_xyz_frames(text)
+    frames = _split_xyz_frames(text)
     assert len(frames) == 1
 
 
 def test_split_xyz_frames_truncated_drops_partial() -> None:
     # 3 atoms declared but only 1 supplied — should not appear as a frame
     truncated = "3\nenergy=-1.0\nAl 0 0 0\n"
-    frames = server._split_xyz_frames(truncated)
+    frames = _split_xyz_frames(truncated)
     assert frames == []
 
 
@@ -94,13 +89,13 @@ POSCAR_FCC = textwrap.dedent("""\
 
 
 def test_poscar_to_xyz_bad_input_returns_none() -> None:
-    result = server._poscar_to_xyz("this is not a poscar at all")
+    result = _poscar_to_xyz("this is not a poscar at all")
     assert result is None
 
 
 def test_poscar_to_xyz_accepts_string() -> None:
     # Should return a str (extxyz) or None — never raise
-    result = server._poscar_to_xyz(POSCAR_FCC)
+    result = _poscar_to_xyz(POSCAR_FCC)
     assert result is None or isinstance(result, str)
 
 
@@ -127,13 +122,13 @@ def mock_sqs_tree(tmp_path: Path) -> Path:
 
 
 def test_scan_energies_returns_all(mock_sqs_tree: Path) -> None:
-    result = server.scan_energies(mock_sqs_tree)
+    result = scan_energies(mock_sqs_tree)
     assert len(result["labels"]) == 4
     assert len(result["energies"]) == 4
 
 
 def test_scan_energies_sorted_consistently(mock_sqs_tree: Path) -> None:
-    result = server.scan_energies(mock_sqs_tree)
+    result = scan_energies(mock_sqs_tree)
     labels = result["labels"]
     # Pure Al (Al=1.0) has highest Al fraction — sorts first alphabetically by element
     al_pure_idx = next(i for i, lbl in enumerate(labels) if "Al=1.0" in lbl)
@@ -145,7 +140,7 @@ def test_scan_energies_sorted_consistently(mock_sqs_tree: Path) -> None:
 
 def test_scan_energies_empty_tree(tmp_path: Path) -> None:
     (tmp_path / "Files" / "SQS").mkdir(parents=True)
-    result = server.scan_energies(tmp_path)
+    result = scan_energies(tmp_path)
     assert result == {"labels": [], "energies": []}
 
 
@@ -153,12 +148,12 @@ def test_scan_energies_skips_malformed_energy(tmp_path: Path) -> None:
     p = tmp_path / "Files" / "SQS" / "sqs_lev=1_a_Al=1.0"
     p.mkdir(parents=True)
     (p / "energy").write_text("not_a_float")
-    result = server.scan_energies(tmp_path)
+    result = scan_energies(tmp_path)
     assert result == {"labels": [], "energies": []}
 
 
 def test_scan_energies_no_sqs_dir(tmp_path: Path) -> None:
-    result = server.scan_energies(tmp_path)
+    result = scan_energies(tmp_path)
     assert result == {"labels": [], "energies": []}
 
 
