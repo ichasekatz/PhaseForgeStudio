@@ -3,7 +3,7 @@ name = "phaseforge-studio"
 version = "0.1.0"
 description = "Browser-based dashboard for MaterialsFramework / BLADE / PhaseForge pipelines"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [
@@ -22,6 +22,13 @@ dev = [
     "pytest>=9.0.0",
     "ruff>=0.15.0",
     "ty>=0.0.20",
+]
+hpc = [
+    "numpy>=2.0",
+    "ase>=3.23",
+    "pycalphad>=0.11",
+    "matplotlib>=3.9",
+    "Pillow>=10.0",
 ]
 
 [project.urls]
@@ -73,7 +80,7 @@ ignore = [
 docstring-code-format = true
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
