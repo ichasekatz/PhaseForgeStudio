@@ -1191,7 +1191,7 @@ async function pollLiveStructure() {
     if (frames.length > 0) {
       _applyFrames(frames);
     } else {
-      renderStructure(d.xyz, "xyz");
+      renderStructure(d.xyz, "xyz", {preserveCamera: true});
     }
 
     // Update source label
@@ -1218,7 +1218,7 @@ function init3Dmol() {
 let _lastXYZText = null;
 let _lastXYZFormat = "xyz";
 
-function renderStructure(text, format) {
+function renderStructure(text, format, {preserveCamera = false} = {}) {
   if (!viewer) return;
   const empty = document.getElementById("viewer-empty");
   if (!text) { empty.style.display = "flex"; return; }
@@ -1226,8 +1226,7 @@ function renderStructure(text, format) {
   _lastXYZText = text;
   _lastXYZFormat = format || "xyz";
   try {
-    // Preserve camera between frames
-    const savedView = viewer._hasContent && viewer.getView ? viewer.getView() : null;
+    const savedView = preserveCamera && viewer._hasContent && viewer.getView ? viewer.getView() : null;
     viewer.clear();
     viewer._hasContent = true;
     viewer.addModel(text, format || "xyz");
@@ -1317,14 +1316,14 @@ function applyBondCutoff(model, cutoff) {
 function setShowBonds(val) {
   showBonds = val;
   if (trajFrames.length) showFrame(trajIdx);
-  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat);
+  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat, {preserveCamera: true});
   else applyStyle();
 }
 
 function setBondCutoff(val) {
   bondCutoff = val;
   if (trajFrames.length) showFrame(trajIdx);
-  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat);
+  else if (_lastXYZText) renderStructure(_lastXYZText, _lastXYZFormat, {preserveCamera: true});
 }
 
 function setShowForces(val) {
@@ -1417,7 +1416,7 @@ function showFrame(idx) {
   idx = Math.max(0, Math.min(trajFrames.length - 1, idx));
   trajIdx = idx;
   const frameText = trajFrames[idx];
-  renderStructure(frameText, "xyz");
+  renderStructure(frameText, "xyz", {preserveCamera: true});
   _syncSlider(idx);
   const e = parseFrameEnergy(frameText);
   const chip = document.getElementById("energy-chip");
