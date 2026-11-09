@@ -30,8 +30,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-import numpy as np
-
 # Ensure ATAT/PhaseForge binaries are on PATH regardless of how server is launched.
 _atat_bin = Path.home() / "Desktop/School/Research/PhaseForge/bin"
 if _atat_bin.exists():
@@ -621,6 +619,8 @@ def _split_xyz_frames(text: str) -> list[str]:
 
 def get_trajectory_xyz(path1: Path, label: str) -> str | None:
     """Return full extxyz text for a label — from trajectory.xyz (live) or built from trajectory.pkl."""
+    import numpy as np
+
     roots = [path1 / "Jobs", path1 / "Files"]
     # Prefer trajectory.xyz (written per step — always up to date)
     for root in roots:
@@ -752,6 +752,8 @@ def get_trajectory_data(path1: Path, label: str) -> dict[str, Any] | None:
 
 def get_trajectory_frame(path1: Path, label: str, frame: int) -> dict[str, Any] | None:
     """Load a single frame from trajectory pickle, return as VASP POSCAR string."""
+    import numpy as np
+
     roots = [path1 / "Jobs", path1 / "Files"]
     for root in roots:
         if not root.is_dir():
@@ -1013,6 +1015,8 @@ def _json_default(obj: Any) -> Any:
 def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     """Run a MaterialsFramework analyzer on a structure file."""
     import sys
+
+    import numpy as np  # noqa: PLC0415
 
     mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
     blade_src = Path(__file__).parent.parent / "BLADE" / "src"
