@@ -564,6 +564,7 @@ select option { background: var(--bg3); }
         </select>
         <button class="btn" onclick="resetCamera()">Reset</button>
         <button class="btn" onclick="loadStructure()">↻</button>
+        <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:2px 8px;border-radius:3px;font-family:var(--font);font-size:10px;cursor:pointer;">⬤ Live</button>
         <span id="struct-source-label"></span>
       </div>
       <!-- Trajectory controls -->
@@ -588,7 +589,6 @@ select option { background: var(--bg3); }
         <label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font);font-size:10px;color:var(--red);user-select:none;">
           <input type="checkbox" id="show-forces-chk" onchange="setShowForces(this.checked)" style="accent-color:var(--red)"> Forces
         </label>
-        <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:2px 8px;border-radius:3px;font-family:var(--font);font-size:10px;cursor:pointer;">⬤ Live</button>
       </div>
       <!-- Atom tooltip -->
       <div id="atom-tooltip" style="display:none;position:fixed;z-index:200;background:rgba(10,16,26,0.92);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-family:var(--font);font-size:10px;color:var(--text);pointer-events:none;white-space:nowrap;"></div>

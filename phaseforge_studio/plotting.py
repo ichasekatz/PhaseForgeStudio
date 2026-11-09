@@ -1,4 +1,4 @@
-"""Phase diagram generation via pycalphad binplot."""
+"""Phase diagram generation via pycalphad binplot and G_mix simplex overlay."""
 
 from __future__ import annotations
 
@@ -180,8 +180,28 @@ def _phase_diagram_from_tdb(
         plt.close(fig)
         pair_pngs.append(out)
 
+    # For N≥3 systems, also generate composition-space phase map
+    overlay_pngs: list[Path] = []
+    if len(all_els) >= 3:
+        sys_name = "".join(all_els)
+        overlay_path = tdb_path.parent / f"{sys_name}_phase_map.png"
+        try:
+            plotted = _plot_phase_overlay(
+                dbf,
+                all_els,
+                phases,
+                overlay_path,
+                t_start=t_min,
+                t_end=t_max,
+                t_step=max(100.0, (t_max - t_min) / 15),
+            )
+            if plotted:
+                overlay_pngs.append(overlay_path)
+        except Exception:
+            pass
+
     if len(pair_pngs) <= 1:
-        return pair_pngs
+        return overlay_pngs + pair_pngs
 
     try:
         from PIL import Image
@@ -202,9 +222,280 @@ def _phase_diagram_from_tdb(
         for p in pair_pngs:
             with contextlib.suppress(OSError):
                 p.unlink()
-        return [combined_path]
+        return overlay_pngs + [combined_path]
     except ImportError:
-        return pair_pngs
+        return overlay_pngs + pair_pngs
+
+
+def _simplex_grid(n_metals: int, n: int, *, x_total: float = 1.0) -> Any:
+    """Recursive composition grid on N-metal simplex summing to x_total."""
+    import numpy as np
+
+    step = x_total / n
+    pts: list[tuple] = []
+
+    def _recurse(remaining: int, dims_left: int, current: list) -> None:
+        if dims_left == 1:
+            pts.append(tuple(current + [remaining * step]))
+            return
+        for i in range(remaining + 1):
+            _recurse(remaining - i, dims_left - 1, current + [i * step])
+
+    _recurse(n, n_metals, [])
+    return np.array(pts)
+
+
+def _polygon_vertices(n: int, radius: float = 1.0) -> Any:
+    import numpy as np
+
+    if n == 4:
+        angles = np.linspace(np.pi / n, 2 * np.pi + np.pi / n, n, endpoint=False)
+    else:
+        angles = np.linspace(np.pi / 2, 2 * np.pi + np.pi / 2, n, endpoint=False)
+    return np.array([[radius * np.cos(a), radius * np.sin(a)] for a in angles])
+
+
+def _compositions_to_xy(grid: Any, x_total: float) -> tuple[Any, Any]:
+    import numpy as np
+
+    verts = _polygon_vertices(grid.shape[1])
+    bary = grid / x_total
+    xy = np.dot(bary, verts)
+    return xy[:, 0], xy[:, 1]
+
+
+def _find_two_phase_mask(x_cart: Any, y_cart: Any, g_mix: Any, threshold: float = 5.0) -> Any:
+    """Points above lower convex hull by > threshold are in two-phase region."""
+    import numpy as np
+    from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import ConvexHull
+
+    pts_3d = np.column_stack([x_cart, y_cart, g_mix])
+    pts_2d = np.column_stack([x_cart, y_cart])
+    try:
+        hull = ConvexHull(pts_3d)
+    except Exception:
+        return np.zeros(len(g_mix), dtype=bool)
+
+    lower_verts = set()
+    for simplex, eq in zip(hull.simplices, hull.equations, strict=False):
+        if eq[2] < 0:
+            lower_verts.update(simplex)
+    if len(lower_verts) < 3:
+        return np.zeros(len(g_mix), dtype=bool)
+
+    lower_idx = np.array(list(lower_verts))
+    interp = LinearNDInterpolator(pts_3d[lower_idx, :2], pts_3d[lower_idx, 2])
+    g_convex = interp(pts_2d)
+    nan_mask = np.isnan(g_convex)
+    g_convex[nan_mask] = g_mix[nan_mask]
+    return (g_mix - g_convex) > threshold
+
+
+def _mask_outside_simplex(triang: Any, x_cart: Any, y_cart: Any, n_metals: int) -> Any:
+    import numpy as np
+    from matplotlib.path import Path as MplPath
+
+    verts = _polygon_vertices(n_metals)
+    closed = np.vstack([verts, verts[0]])
+    poly_path = MplPath(closed)
+    cx = x_cart[triang.triangles].mean(axis=1)
+    cy = y_cart[triang.triangles].mean(axis=1)
+    inside = poly_path.contains_points(np.column_stack([cx, cy]), radius=1e-6)
+    triang.set_mask(~inside)
+    return triang
+
+
+def _clip_to_simplex(ax: Any, n_metals: int) -> None:
+    import numpy as np
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path as MplPath
+
+    verts = _polygon_vertices(n_metals)
+    closed = np.vstack([verts, verts[0]])
+    clip_path = MplPath(closed)
+    clip_patch = PathPatch(clip_path, transform=ax.transData)
+    for coll in ax.collections:
+        coll.set_clip_path(clip_patch)
+    for line in ax.lines:
+        line.set_clip_path(clip_patch)
+
+
+def _draw_polygon_frame(ax: Any, labels: list[str]) -> Any:
+    import numpy as np
+    from matplotlib.patches import Polygon as MplPolygon
+
+    n = len(labels)
+    verts = _polygon_vertices(n)
+    ax.add_patch(MplPolygon(verts, closed=True, edgecolor="k", facecolor="none", linewidth=2, zorder=0))
+    for j, label in enumerate(labels):
+        theta = np.arctan2(verts[j, 1], verts[j, 0])
+        nx = verts[j, 0] + 0.2 * np.cos(theta)
+        ny = verts[j, 1] + 0.2 * np.sin(theta)
+        ax.text(nx, ny, label, fontsize=12, ha="center", va="center", fontweight="bold")
+    ax.set_aspect("equal")
+    ax.axis("off")
+    pad = 0.35
+    ax.set_xlim(verts[:, 0].min() - pad, verts[:, 0].max() + pad)
+    ax.set_ylim(verts[:, 1].min() - pad, verts[:, 1].max() + pad + 0.2)
+    return verts
+
+
+def _compute_gmix_many(
+    tdb: Any, all_comps: list[str], metals: list[str], phases: list[str], *, temperatures: Any, grid: Any
+) -> dict[int, Any]:
+    """Compute G_mix for several temperatures via pycalphad calculate()."""
+    import numpy as np
+    from pycalphad import calculate
+
+    n_metals = len(metals)
+    n_pts = len(grid)
+    pts = {metals[i]: grid[:, i] for i in range(n_metals)}
+
+    try:
+        result = calculate(tdb, all_comps, phases[0], T=temperatures, P=101325.0, points=pts)
+        gm = result.GM
+        indexer = {dim: 0 for dim in gm.dims if dim not in {"T", "points"}}
+        if indexer:
+            gm = gm.isel(indexer)
+        gm = gm.transpose("T", "points")
+        calc_temps = np.asarray(gm.coords["T"].values, dtype=float)
+        gm_vals = np.asarray(gm.values, dtype=float)[:, :n_pts]
+
+        g_ends = []
+        for m in metals:
+            end_pts = {metals[i]: np.array([1e-10]) for i in range(n_metals)}
+            end_pts[m] = np.array([1.0 - (n_metals - 1) * 1e-10])
+            r = calculate(tdb, all_comps, phases[0], T=temperatures, P=101325.0, points=end_pts)
+            eg = r.GM
+            if indexer:
+                eg = eg.isel(indexer)
+            eg = eg.transpose("T", "points")
+            g_ends.append(np.asarray(eg.values, dtype=float)[:, 0])
+
+        endmember = np.column_stack(g_ends)
+        baseline = endmember @ grid.T
+        g_mix = gm_vals - baseline
+        return {int(round(t)): g_mix[i] for i, t in enumerate(calc_temps)}
+    except Exception as exc:
+        print(f"    batch G_mix failed ({exc}); per-T fallback")
+
+    from pycalphad import calculate as _calc
+
+    result_d: dict[int, Any] = {}
+    for t_val in temperatures:
+        try:
+            res = _calc(tdb, all_comps, phases[0], T=float(t_val), P=101325.0, points=pts)
+            gm_t = np.asarray(res.GM.values, dtype=float).ravel()[:n_pts]
+            g_e = []
+            for m in metals:
+                ep = {metals[i]: np.array([1e-10]) for i in range(n_metals)}
+                ep[m] = np.array([1.0 - (n_metals - 1) * 1e-10])
+                re = _calc(tdb, all_comps, phases[0], T=float(t_val), P=101325.0, points=ep)
+                g_e.append(float(re.GM.values.ravel()[0]))
+            baseline_t = np.array([sum(grid[i, j] * g_e[j] for j in range(n_metals)) for i in range(n_pts)])
+            result_d[int(round(float(t_val)))] = gm_t - baseline_t
+        except Exception:
+            pass
+    return result_d
+
+
+def _plot_phase_overlay(
+    tdb: Any,
+    metals: list[str],
+    phases: list[str],
+    out_path: Path,
+    *,
+    t_start: float = 300.0,
+    t_end: float = 3000.0,
+    t_step: float = 300.0,
+    n_grid: int = 30,
+) -> bool:
+    """Generate composition-space phase map for N≥3 metal systems.
+
+    Projects the N-metal simplex to 2D via polygon vertices, computes G_mix
+    on a grid of compositions, finds two-phase regions via lower convex hull,
+    and overlays shaded regions for each temperature with a plasma colorbar.
+    Matches the approach in BLADE's phase_visualization.py.
+
+    Args:
+        tdb: pycalphad Database object.
+        metals: Sorted list of variable element names.
+        phases: Phase names from TDB.
+        out_path: Output PNG path.
+        t_start: First temperature (K).
+        t_end: Final temperature (K).
+        t_step: Temperature increment (K).
+        n_grid: Grid density per simplex dimension.
+
+    Returns:
+        True if any two-phase region was found and plotted.
+    """
+    import matplotlib
+    import matplotlib.cm as mcm
+    import matplotlib.colors as mcolors
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib import tri
+
+    matplotlib.use("Agg")
+
+    t_arr = np.arange(t_start, t_end + 1, t_step, dtype=float)
+    if t_arr.size == 0 or t_arr[-1] < t_end - 0.5:
+        t_arr = np.append(t_arr, t_end)
+    t_arr = np.unique(t_arr)
+
+    all_comps = list(tdb.elements) + ["VA"]
+    phase_grid = _simplex_grid(len(metals), n_grid, x_total=1.0)
+    x_cart, y_cart = _compositions_to_xy(phase_grid, 1.0)
+    triang = tri.Triangulation(x_cart, y_cart)
+    triang = _mask_outside_simplex(triang, x_cart, y_cart, len(metals))
+
+    gmix_by_t = _compute_gmix_many(tdb, all_comps, metals, phases, temperatures=t_arr, grid=phase_grid)
+
+    cmap = mcm.plasma
+    norm = mcolors.Normalize(vmin=t_start, vmax=t_end)
+    fig, ax = plt.subplots(figsize=(9, 8))
+    _draw_polygon_frame(ax, [m.title() for m in metals])
+
+    any_two_phase = False
+    any_plotted = False
+
+    for t_raw in t_arr:
+        t_k = int(t_raw)
+        g_mix = gmix_by_t.get(t_k)
+        if g_mix is None or np.isnan(g_mix).all():
+            continue
+        any_plotted = True
+        color = cmap(norm(t_k))
+        two_phase = _find_two_phase_mask(x_cart, y_cart, g_mix)
+        if two_phase.any():
+            any_two_phase = True
+            shade = two_phase.astype(float)
+            ax.tricontourf(triang, shade, levels=[0.5, 1.5], colors=[color], alpha=0.35)
+            ax.tricontour(triang, shade, levels=[0.5], colors=[color], linewidths=1.2, alpha=0.9)
+            _clip_to_simplex(ax, len(metals))
+
+    if not any_plotted:
+        plt.close(fig)
+        return False
+
+    sm = mcm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, pad=0.02, shrink=0.7)
+    cbar.set_label("Temperature (K)", fontsize=11)
+    label_str = "-".join(m.title() for m in metals)
+    note = "shaded = two-phase" if any_two_phase else "single phase across all T"
+    ax.set_title(
+        f"{label_str}  {int(t_start)}–{int(t_end)} K  (every {int(t_step)} K)\n{note}",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
 
 
 def _generate_phase_diagrams(
