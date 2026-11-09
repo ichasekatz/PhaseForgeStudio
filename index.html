@@ -719,6 +719,8 @@ let liveMode = false;
 let liveInterval = null;
 let liveXYZPath = "";     // last trajectory.xyz path seen
 
+let _pendingZoom = false; // zoomTo() deferred until tab is visible
+
 // Energy mode
 let energyTabMode = "all";
 let energyStepData = null;
@@ -922,6 +924,7 @@ function switchTab(name) {
   if (name === "phasediag") loadPhaseDiagrams();
   if (name === "structure" && viewer) {
     if (typeof viewer.resize === "function") viewer.resize();
+    if (_pendingZoom) { viewer.zoomTo(); _pendingZoom = false; }
     viewer.render();
   }
 }
@@ -1233,7 +1236,18 @@ function renderStructure(text, format, {preserveCamera = false} = {}) {
     applyBondCutoff(viewer.getModel(0), showBonds ? bondCutoff : 0);
     applyStyle();
     if (showForces && (format === "xyz" || !format)) _renderForceArrowsFromXYZ(text);
-    if (savedView) viewer.setView(savedView); else viewer.zoomTo();
+    if (savedView) {
+      viewer.setView(savedView);
+    } else {
+      const tab = document.getElementById("tab-structure");
+      const visible = tab && tab.classList.contains("active");
+      if (visible) {
+        viewer.zoomTo();
+        _pendingZoom = false;
+      } else {
+        _pendingZoom = true; // defer until tab becomes visible
+      }
+    }
     viewer.render();
     initAtomTooltip();
   } catch (e) {
