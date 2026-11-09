@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import traceback
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,11 @@ def _run_pipeline(cfg: dict[str, Any], job: JobState) -> None:
         path1 = Path(cfg["path1"]).expanduser().resolve()
 
         system_name = "".join(cfg["species"])
-        work_dir = path1 / "Jobs" / job.job_id / system_name
+        # Use readable job name as directory (e.g. "FeNiCr_FCC_A1_1") with
+        # a short UUID suffix to avoid collisions across server restarts.
+        safe_name = re.sub(r"[^\w]", "_", job.job_name or "").strip("_")
+        job_dir_name = f"{safe_name}_{job.job_id[:4]}" if job.job_id else safe_name
+        work_dir = path1 / "Jobs" / job_dir_name / system_name
         work_dir.mkdir(parents=True, exist_ok=True)
         job.push_log(f"[studio] Work dir: {work_dir}")
 

@@ -1646,7 +1646,7 @@ async function renderAllEnergies() {
     // Reset to single-dataset mode
     energyChart.data.datasets = energyChart.data.datasets.slice(0, 2);
     energyChart.data.labels = data.labels || [];
-    energyChart.data.datasets[0].label = "Final Energy (eV)";
+    energyChart.data.datasets[0].label = "Final Energy (eV/atom)";
     energyChart.data.datasets[0].data = data.energies;
     energyChart.data.datasets[0].borderColor = "#E8A030";
     energyChart.data.datasets[0].backgroundColor = "rgba(232,160,48,0.08)";

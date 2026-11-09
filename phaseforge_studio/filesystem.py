@@ -128,8 +128,25 @@ def scan_latest_structure(path1: Path) -> dict[str, Any]:
     return {"structure": None, "format": None, "source": "none", "label": ""}
 
 
+def _count_atoms_from_atat(structure_dir: Path) -> int:
+    """Count atoms from str_relax.out or str.out in an ATAT structure directory.
+
+    ATAT structure files have 6 header lines (3 lattice + 3 coord axes) followed
+    by one line per atom: ``x y z Element``.
+    """
+    for name in ("str_relax.out", "str.out"):
+        p = structure_dir / name
+        if p.exists():
+            try:
+                lines = p.read_text().splitlines()
+                return sum(1 for ln in lines[6:] if len(ln.split()) == 4)
+            except OSError:
+                pass
+    return 0
+
+
 def scan_energies(path1: Path) -> dict[str, Any]:
-    """Read per-structure energies from ATAT 'energy' files.
+    """Read per-structure energies (eV/atom) from ATAT 'energy' files.
 
     Scans Jobs/ and Files/SQS/ and sorts results by composition (element
     fractions) so structures with the same composition sit adjacent regardless
@@ -139,7 +156,7 @@ def scan_energies(path1: Path) -> dict[str, Any]:
         path1 (Path): BLADE root directory.
 
     Returns:
-        Dict with ``labels`` (list[str]) and ``energies`` (list[float]).
+        Dict with ``labels`` (list[str]) and ``energies`` (list[float]) in eV/atom.
     """
     roots = [path1 / "Jobs", path1 / "Files" / "SQS"]
     energy_files: list[Path] = []
@@ -166,7 +183,8 @@ def scan_energies(path1: Path) -> dict[str, Any]:
     for _fracs, dirname, ef in sorted(records, key=_key):
         try:
             val = float(ef.read_text().strip())
-            energies.append(val)
+            n_atoms = _count_atoms_from_atat(ef.parent)
+            energies.append(val / n_atoms if n_atoms > 0 else val)
             labels.append(dirname)
         except (OSError, ValueError):
             continue
