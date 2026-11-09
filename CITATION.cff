@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: PhaseForge Studio
+version: 0.1.0
+date-released: "2026-11-09"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/ichasekatz/PhaseForgeStudio"
+abstract: "Browser-based dashboard for MaterialsFramework / BLADE / PhaseForge MLIP+CALPHAD pipelines. Runs on HPC; access via SSH port forwarding."
+authors:
+  - family-names: "Katz"
+    given-names: "Chase"
+    email: ichasekatz@tamu.edu

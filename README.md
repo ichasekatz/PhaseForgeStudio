@@ -2,7 +2,10 @@
 
 Browser-based dashboard for [MaterialsFramework](https://github.com/dogusariturk/MaterialsFramework) / BLADE / PhaseForge pipelines. Runs on HPC; access via SSH port forwarding. No npm, no build step — single Python file server + single HTML file frontend.
 
-![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+[![Tests](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/tests.yml/badge.svg)](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/tests.yml)
+[![Lint](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/lint.yml/badge.svg)](https://github.com/ichasekatz/PhaseForgeStudio/actions/workflows/lint.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 
 ## Features
 
@@ -83,6 +86,7 @@ ssh -L 8080:localhost:8080 <hpc-host>
 | `/api/analyze` | POST | Run a MaterialsFramework analyzer |
 | `/api/browse` | GET | File browser entries |
 | `/api/convert_xyz` | GET | POSCAR → extxyz conversion |
+| `/api/phase_diagram` | GET | Generate phase diagram PNGs from a TDB |
 | `/files/<rel>` | GET | Serve file from path1 |
 
 ## Requirements
@@ -93,6 +97,20 @@ ssh -L 8080:localhost:8080 <hpc-host>
 - [`BLADE`](https://github.com/ichasekatz/BLADE) — SQS generation + MLIP relaxation pipeline that PhaseForge Studio fronts
 - `mcsqs` / `sqs2tdb` on `$PATH` (from [ATAT](https://www.brown.edu/Departments/Engineering/Labs/avdw/atat/))
 
+## Citation
+
+If you use PhaseForge Studio in your research, please cite:
+
+```bibtex
+@software{katz_phaseforge_studio_2026,
+  author  = {Katz, Chase},
+  title   = {{PhaseForge Studio}: Browser-based dashboard for MaterialsFramework / BLADE / PhaseForge pipelines},
+  year    = {2026},
+  url     = {https://github.com/ichasekatz/PhaseForgeStudio},
+  license = {GPL-3.0-or-later},
+}
+```
+
 ## License
 
-MIT
+GPL-3.0-or-later — see [LICENSE](LICENSE).
