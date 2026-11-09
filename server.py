@@ -13,7 +13,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import base64
 import contextlib
 import io
 import json
@@ -42,7 +41,7 @@ if _atat_bin.exists():
 _gui_dir = Path(__file__).parent
 _research = Path.home() / "Desktop/School/Research"
 for _src in [
-    _gui_dir / "MaterialsFramework/src",   # GUI-local MF v1.0.0 (preferred)
+    _gui_dir / "MaterialsFramework/src",  # GUI-local MF v1.0.0 (preferred)
     _research / "BLADE/src",
 ]:
     _s = str(_src)
@@ -171,9 +170,20 @@ _default_config: dict[str, Any] = {
 
 # Hardcoded fallback when materialsframework is not installed
 _fallback_calculators: list[str] = [
-    "alignn", "alphanet", "chgnet", "deepmd", "eqv2", "grace",
-    "hienet", "m3gnet", "mace", "mattersim", "nequip", "orb",
-    "sevennet", "uma",
+    "alignn",
+    "alphanet",
+    "chgnet",
+    "deepmd",
+    "eqv2",
+    "grace",
+    "hienet",
+    "m3gnet",
+    "mace",
+    "mattersim",
+    "nequip",
+    "orb",
+    "sevennet",
+    "uma",
 ]
 
 
@@ -207,10 +217,13 @@ def _resolve(cfg: dict[str, Any], key: str) -> Path:
 # Structure conversion utilities
 # ---------------------------------------------------------------------------
 
+
 def _atoms_to_xyz(atoms: Any) -> str:
     """Convert ASE Atoms to extxyz string."""
     import io as _io
+
     from ase.io import write as _ase_write
+
     buf = _io.StringIO()
     _ase_write(buf, atoms, format="extxyz")
     return buf.getvalue()
@@ -220,7 +233,9 @@ def _poscar_to_xyz(text: str) -> str | None:
     """Convert POSCAR/CONTCAR text to extxyz string via ASE."""
     try:
         import io as _io
+
         from ase.io import read as _ase_read
+
         atoms = _ase_read(_io.StringIO(text), format="vasp")
         return _atoms_to_xyz(atoms)
     except Exception:
@@ -230,18 +245,19 @@ def _poscar_to_xyz(text: str) -> str | None:
 # Calculator discovery
 # ---------------------------------------------------------------------------
 
+
 def list_available_calculators() -> list[dict[str, Any]]:
     """Return calculator metadata from the materialsframework registry."""
     import ast
 
     try:
-        from materialsframework.calculators.registry import list_calculators
         import materialsframework.calculators as _calc_pkg
+        from materialsframework.calculators.registry import list_calculators
+
         calc_dir = Path(_calc_pkg.__file__).parent
         names = list_calculators()
     except Exception:
-        return [{"name": n, "supports_device": False, "supports_model": False}
-                for n in sorted(_fallback_calculators)]
+        return [{"name": n, "supports_device": False, "supports_model": False} for n in sorted(_fallback_calculators)]
 
     result = []
     for name in sorted(names):
@@ -290,6 +306,7 @@ def list_available_lattices(sqsdb_path: Path) -> list[str]:
 # ---------------------------------------------------------------------------
 # Filesystem scanners
 # ---------------------------------------------------------------------------
+
 
 def scan_latest_structure(path1: Path) -> dict[str, Any]:
     """Find most recently modified CONTCAR or bestsqs*.out across all job outputs."""
@@ -367,7 +384,7 @@ def scan_energies(path1: Path) -> dict[str, Any]:
 
     energies: list[float] = []
     labels: list[str] = []
-    for fracs, dirname, ef in sorted(records, key=_key):
+    for _fracs, dirname, ef in sorted(records, key=_key):
         try:
             val = float(ef.read_text().strip())
             energies.append(val)
@@ -386,27 +403,27 @@ def scan_outputs(path1: Path) -> list[dict[str, Any]]:
         if not root.is_dir():
             continue
         for tdb in sorted(root.rglob("*.tdb"), key=lambda p: p.stat().st_mtime, reverse=True):
-            try:
-                results.append({
-                    "name": tdb.name,
-                    "rel_path": str(tdb.relative_to(path1)),
-                    "file_type": "tdb",
-                    "mtime": tdb.stat().st_mtime,
-                    "size": tdb.stat().st_size,
-                })
-            except OSError:
-                pass
+            with contextlib.suppress(OSError):
+                results.append(
+                    {
+                        "name": tdb.name,
+                        "rel_path": str(tdb.relative_to(path1)),
+                        "file_type": "tdb",
+                        "mtime": tdb.stat().st_mtime,
+                        "size": tdb.stat().st_size,
+                    }
+                )
         for png in sorted(root.rglob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True):
-            try:
-                results.append({
-                    "name": png.name,
-                    "rel_path": str(png.relative_to(path1)),
-                    "file_type": "png",
-                    "mtime": png.stat().st_mtime,
-                    "size": png.stat().st_size,
-                })
-            except OSError:
-                pass
+            with contextlib.suppress(OSError):
+                results.append(
+                    {
+                        "name": png.name,
+                        "rel_path": str(png.relative_to(path1)),
+                        "file_type": "png",
+                        "mtime": png.stat().st_mtime,
+                        "size": png.stat().st_size,
+                    }
+                )
 
     return results
 
@@ -428,8 +445,7 @@ def browse_path(path1: Path, rel: str) -> dict[str, Any]:
         return {"path": display_path, "entries": []}
 
     # At root level only show output-relevant dirs; hide source/config noise
-    _root_output_dirs = {"Files", "Jobs", "Comps", "SQS", "Phase_Diagrams",
-                         "BCC_Benchmark", "Outputs"}
+    _root_output_dirs = {"Files", "Jobs", "Comps", "SQS", "Phase_Diagrams", "BCC_Benchmark", "Outputs"}
 
     entries: list[dict[str, Any]] = []
     try:
@@ -464,23 +480,31 @@ def browse_path(path1: Path, rel: str) -> dict[str, Any]:
             kind = "energy"
         elif item.name == "trajectory.pkl":
             kind = "trajectory"
-        elif item.name in ("energy", "force.out", "stress.out", "str_relax.out",
-                           "str.out", "str_hint.out", "rndstr.in", "sqscell.out",
-                           "bestsqs.out", "mcsqs.log"):
-            kind = "file"
-        elif ext in (".py", ".toml", ".lock", ".yaml", ".yml", ".md", ".cff",
-                     ".txt", ".cfg", ".ini", ".rst"):
+        elif item.name in (
+            "energy",
+            "force.out",
+            "stress.out",
+            "str_relax.out",
+            "str.out",
+            "str_hint.out",
+            "rndstr.in",
+            "sqscell.out",
+            "bestsqs.out",
+            "mcsqs.log",
+        ) or ext in (".py", ".toml", ".lock", ".yaml", ".yml", ".md", ".cff", ".txt", ".cfg", ".ini", ".rst"):
             kind = "file"
         else:
             kind = "file"
 
-        entries.append({
-            "name": item.name,
-            "kind": kind,
-            "rel_path": str(item.relative_to(path1)),
-            "size": st.st_size,
-            "mtime": st.st_mtime,
-        })
+        entries.append(
+            {
+                "name": item.name,
+                "kind": kind,
+                "rel_path": str(item.relative_to(path1)),
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+            }
+        )
 
     return {"path": str(target.relative_to(path1)), "entries": entries}
 
@@ -497,13 +521,15 @@ def scan_structures(path1: Path) -> list[dict[str, Any]]:
                 st = contcar.stat()
                 if st.st_size == 0:
                     continue
-                results.append({
-                    "label": contcar.parent.name,
-                    "rel_path": str(contcar.relative_to(path1)),
-                    "source": "CONTCAR",
-                    "format": "vasp",
-                    "mtime": st.st_mtime,
-                })
+                results.append(
+                    {
+                        "label": contcar.parent.name,
+                        "rel_path": str(contcar.relative_to(path1)),
+                        "source": "CONTCAR",
+                        "format": "vasp",
+                        "mtime": st.st_mtime,
+                    }
+                )
             except OSError:
                 continue
     return sorted(results, key=lambda x: x["mtime"], reverse=True)
@@ -559,8 +585,8 @@ def get_live_structure(path1: Path) -> dict[str, Any]:
         if not frames:
             return {"xyz": None, "full_xyz": None, "frame": 0, "total_frames": 0, "path": ""}
         return {
-            "xyz": frames[-1],           # latest single frame
-            "full_xyz": text,            # all frames as multi-frame extxyz
+            "xyz": frames[-1],  # latest single frame
+            "full_xyz": text,  # all frames as multi-frame extxyz
             "frame": len(frames) - 1,
             "total_frames": len(frames),
             "path": str(xyz_path.relative_to(path1)),
@@ -616,6 +642,7 @@ def get_trajectory_xyz(path1: Path, label: str) -> str | None:
             if traj_pkl.parent.name == label:
                 try:
                     import io as _io
+
                     with traj_pkl.open("rb") as f:
                         data = pickle.load(f)
                     n = len(data.get("atom_positions", []))
@@ -631,12 +658,14 @@ def get_trajectory_xyz(path1: Path, label: str) -> str | None:
                         forces = forces_raw[idx] if idx < len(forces_raw) else None
                         try:
                             from ase import Atoms as _Atoms
+
                             _a = _Atoms(symbols=symbols, positions=positions, cell=cell, pbc=True)
                             _a.info["energy"] = float(energy)
                             if forces is not None:
                                 _a.arrays["forces"] = np.array(forces)
                             buf = _io.StringIO()
                             from ase.io import write as _ase_write
+
                             _ase_write(buf, _a, format="extxyz", append=True)
                             frames_text.append(buf.getvalue())
                         except Exception:
@@ -680,11 +709,13 @@ def get_system_step_energies(path1: Path, label: str) -> list[dict[str, Any]]:
             n_atoms = len(chem_sym[0]) if chem_sym else 1
             energies_per_atom = [e / n_atoms for e in pot_e]
             if energies_per_atom:
-                results.append({
-                    "label": subdir.name,
-                    "steps": list(range(len(energies_per_atom))),
-                    "energies": energies_per_atom,
-                })
+                results.append(
+                    {
+                        "label": subdir.name,
+                        "steps": list(range(len(energies_per_atom))),
+                        "energies": energies_per_atom,
+                    }
+                )
         except Exception:
             continue
     return results
@@ -744,6 +775,7 @@ def get_trajectory_frame(path1: Path, label: str, frame: int) -> dict[str, Any] 
                     xyz: str | None = None
                     try:
                         from ase import Atoms as _Atoms
+
                         _a = _Atoms(symbols=symbols, positions=positions, cell=cell, pbc=True)
                         _a.info["energy"] = float(energy)
                         if forces_list:
@@ -781,7 +813,7 @@ def _positions_to_poscar(symbols: list[str], positions: Any, cell: Any, energy: 
     lines.append("  ".join(str(cnt[s]) for s in unique_syms))
     lines.append("Cartesian")
     sym_order = {s: i for i, s in enumerate(unique_syms)}
-    atom_data = sorted(zip(symbols, positions), key=lambda x: sym_order[x[0]])
+    atom_data = sorted(zip(symbols, positions, strict=False), key=lambda x: sym_order[x[0]])
     for _, pos in atom_data:
         lines.append(f"  {pos[0]:>16.9f}  {pos[1]:>16.9f}  {pos[2]:>16.9f}")
     return "\n".join(lines)
@@ -792,9 +824,32 @@ def _positions_to_poscar(symbols: list[str], positions: Any, cell: Any, energy: 
 # ---------------------------------------------------------------------------
 
 _alpha_elems = [
-    "Al", "Ba", "Ca", "Cr", "Cu", "Fe", "Ga", "Hf", "In", "Ir",
-    "K",  "La", "Mn", "Na", "Os", "Pd", "Pt", "Re", "Si", "Ti",
-    "U",  "V",  "W",  "Xe", "Y",  "Zr",
+    "Al",
+    "Ba",
+    "Ca",
+    "Cr",
+    "Cu",
+    "Fe",
+    "Ga",
+    "Hf",
+    "In",
+    "Ir",
+    "K",
+    "La",
+    "Mn",
+    "Na",
+    "Os",
+    "Pd",
+    "Pt",
+    "Re",
+    "Si",
+    "Ti",
+    "U",
+    "V",
+    "W",
+    "Xe",
+    "Y",
+    "Zr",
 ]
 
 
@@ -809,8 +864,8 @@ def _build_elem_map(rndstr_path: Path) -> dict[str, str]:
     sl_letters = "abcdefghijklmnop"
     sl_idx = 0
 
-    for line in text.strip().splitlines():
-        line = line.strip()
+    for raw_line in text.strip().splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
@@ -850,7 +905,7 @@ def _atat_species(raw: str, elem_map: dict[str, str], used: set[str]) -> str:
 
 def _parse_atat_structure(text: str, elem_map: dict[str, str] | None = None) -> str | None:
     """Convert ATAT bestsqs.out text to XYZ format."""
-    lines = [l.strip() for l in text.strip().splitlines() if l.strip() and not l.startswith("#")]
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip() and not ln.startswith("#")]
     if len(lines) < 7:
         return None
     try:
@@ -941,9 +996,11 @@ def _contcar_to_xyz(text: str) -> str | None:
 # MaterialsFramework analysis
 # ---------------------------------------------------------------------------
 
+
 def _json_default(obj: Any) -> Any:
     """JSON serializer for numpy scalar and array types."""
     import numpy as np
+
     if isinstance(obj, np.floating):
         return float(obj)
     if isinstance(obj, np.integer):
@@ -956,6 +1013,7 @@ def _json_default(obj: Any) -> Any:
 def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     """Run a MaterialsFramework analyzer on a structure file."""
     import sys
+
     mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
     blade_src = Path(__file__).parent.parent / "BLADE" / "src"
     for p in (str(mf_src), str(blade_src)):
@@ -978,9 +1036,11 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
     try:
         from ase.io import read as ase_read
+
         atoms = ase_read(str(struct_path))
 
         from materialsframework.calculators.registry import get_calculator
+
         _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
         calc_kwargs: dict[str, Any] = {}
         if device and calc_name in _device_calcs:
@@ -989,6 +1049,7 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "eos":
             from materialsframework.analysis.eos import EOSAnalyzer
+
             result = EOSAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             return {
                 "analyzer": "eos",
@@ -1001,17 +1062,20 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "elastic_constants":
             from materialsframework.analysis.elastic_constants import ElasticConstantsAnalyzer
+
             result = ElasticConstantsAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             scalar = {k: float(v) for k, v in result.items() if isinstance(v, (int, float))}
             return {"analyzer": "elastic_constants", **scalar}
 
         if analyzer_name == "formation_energy":
             from materialsframework.analysis.formation_energy import FormationEnergyAnalyzer
+
             result = FormationEnergyAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             return {"analyzer": "formation_energy", "formation_energy": float(result["formation_energy"])}
 
         if analyzer_name == "bain":
             from materialsframework.analysis.bain import BainPathAnalyzer
+
             result = BainPathAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             return {
                 "analyzer": "bain",
@@ -1021,6 +1085,7 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "usfe":
             from materialsframework.analysis.usfe import USFEAnalyzer
+
             result = USFEAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             return {
                 "analyzer": "usfe",
@@ -1031,11 +1096,13 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "cubic_elastic_constants":
             from materialsframework.analysis.cubic_elastic_constants import CubicElasticConstantsAnalyzer
+
             result = CubicElasticConstantsAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             return {"analyzer": "cubic_elastic_constants", **{k: float(v) for k, v in result.items() if isinstance(v, (int, float))}}
 
         if analyzer_name == "cte":
             from materialsframework.analysis.cte import CTEAnalyzer
+
             result = CTEAnalyzer(calculator=calculator).calculate(atoms)
             return {
                 "analyzer": "cte",
@@ -1047,21 +1114,29 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "surface":
             from materialsframework.analysis.surface import SurfaceAnalyzer
+
             result = SurfaceAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             slabs = []
             for s in result.get("slabs", []):
-                slabs.append({k: (float(v) if isinstance(v, (int, float, np.floating)) else str(v))
-                               for k, v in s.items() if not hasattr(v, "__len__")})
+                slabs.append(
+                    {
+                        k: (float(v) if isinstance(v, (int, float, np.floating)) else str(v))
+                        for k, v in s.items()
+                        if not hasattr(v, "__len__")
+                    }
+                )
             return {"analyzer": "surface", "slabs": slabs}
 
         if analyzer_name == "sbe":
             from materialsframework.analysis.sbe import SBEAnalyzer
+
             result = SBEAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             scalar = {k: float(v) for k, v in result.items() if isinstance(v, (int, float, np.floating))}
             return {"analyzer": "sbe", **scalar}
 
         if analyzer_name == "phonopy":
             from materialsframework.analysis.phonopy import PhonopyAnalyzer
+
             result = PhonopyAnalyzer(calculator=calculator).calculate(atoms)
             out: dict[str, Any] = {"analyzer": "phonopy"}
             for k, v in result.items():
@@ -1075,18 +1150,25 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
         if analyzer_name == "phono3py":
             from materialsframework.analysis.phono3py import Phono3pyAnalyzer
+
             result = Phono3pyAnalyzer(calculator=calculator).calculate(atoms)
-            return {"analyzer": "phono3py",
-                    "thermal_conductivity": float(result.get("kappa", 0.0)) if hasattr(result.get("kappa"), "__float__") else str(result.get("kappa", ""))}
+            return {
+                "analyzer": "phono3py",
+                "thermal_conductivity": float(result.get("kappa", 0.0))
+                if hasattr(result.get("kappa"), "__float__")
+                else str(result.get("kappa", "")),
+            }
 
         if analyzer_name == "h_solubility":
             from materialsframework.analysis.h_solubility import HSolubilityAnalyzer
+
             result = HSolubilityAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
             scalar = {k: float(v) for k, v in result.items() if isinstance(v, (int, float, np.floating))}
             return {"analyzer": "h_solubility", **scalar}
 
         if analyzer_name == "annni":
             from materialsframework.analysis.annni import ANNNIStackingFaultAnalyzer
+
             result = ANNNIStackingFaultAnalyzer(calculator=calculator).calculate(atoms)
             scalar = {k: float(v) for k, v in result.items() if isinstance(v, (int, float, np.floating))}
             return {"analyzer": "annni", **scalar}
@@ -1098,12 +1180,14 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
 
     except Exception as exc:
         import traceback as tb
+
         return {"error": str(exc), "traceback": tb.format_exc()}
 
 
 # ---------------------------------------------------------------------------
 # Job state machine
 # ---------------------------------------------------------------------------
+
 
 class JobState:
     """Thread-safe state machine for a single background pipeline job."""
@@ -1158,6 +1242,7 @@ _job_counter: int = 0  # global sequential counter for job names
 # Capturing stdout/stderr from pipeline thread
 # ---------------------------------------------------------------------------
 
+
 class _LogCapture(io.TextIOBase):
     """TextIO shim that forwards writes to JobState.push_log."""
 
@@ -1183,6 +1268,7 @@ class _LogCapture(io.TextIOBase):
 # Trajectory-tracking Sqs2tdb factory
 # ---------------------------------------------------------------------------
 
+
 def _make_tracking_sqs2tdb() -> type:
     """Return a Sqs2tdb subclass that saves trajectory.pkl per sqs_lev subdir."""
     from materialsframework.tools.sqs2tdb import Sqs2tdb
@@ -1202,6 +1288,7 @@ def _make_tracking_sqs2tdb() -> type:
 # Phase diagram generation
 # ---------------------------------------------------------------------------
 
+
 def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float = 3000.0) -> list[Path]:
     """Generate phase diagram PNGs from a TDB file.
 
@@ -1212,9 +1299,11 @@ def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float =
     Returns list of PNG paths written.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from pycalphad import Database, binplot, variables as v
+    from pycalphad import Database, binplot
+    from pycalphad import variables as v
 
     dbf = Database(str(tdb_path))
     phases = list(dbf.phases.keys())
@@ -1230,6 +1319,7 @@ def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float =
 
     # Generate all binary sub-systems
     from itertools import combinations
+
     pairs = list(combinations(all_els, 2))
 
     for el_a, el_b in pairs:
@@ -1250,8 +1340,7 @@ def _phase_diagram_from_tdb(tdb_path: Path, t_min: float = 300.0, t_max: float =
             binplot(dbf, comps, phases, conds, plot_kwargs={"ax": ax})
         except (ValueError, KeyError) as exc:
             if "need at least one array" in str(exc) or "degrees of freedom" in str(exc).lower():
-                ax.text(0.5, 0.5, "No two-phase boundaries found", ha="center", va="center",
-                        transform=ax.transAxes, color="gray")
+                ax.text(0.5, 0.5, "No two-phase boundaries found", ha="center", va="center", transform=ax.transAxes, color="gray")
             else:
                 plt.close(fig)
                 raise
@@ -1303,6 +1392,7 @@ def _generate_phase_diagrams(work_dir: Path, species: list[str], lattices: list[
 # Pipeline runner
 # ---------------------------------------------------------------------------
 
+
 def _run_pipeline(cfg: dict[str, Any], job: JobState) -> None:
     """Background thread: run the full Sqs2tdb pipeline in a job work dir."""
     capture = _LogCapture(job)
@@ -1310,12 +1400,12 @@ def _run_pipeline(cfg: dict[str, Any], job: JobState) -> None:
     try:
         job.push_log(f"[studio] Starting pipeline — job {job.job_id}")
         job.push_log(f"[studio] species={cfg['species']} lattices={cfg['lattices']}")
-        job.push_log(f"[studio] calculator={cfg['calculator']} device={cfg.get('device','cpu')} fmax={cfg['fmax']}")
+        job.push_log(f"[studio] calculator={cfg['calculator']} device={cfg.get('device', 'cpu')} fmax={cfg['fmax']}")
 
         from materialsframework.calculators.registry import get_calculator
         from materialsframework.tools.sqs2tdb import Sqs2tdb
 
-        SqsCls = _make_tracking_sqs2tdb() if cfg.get("track_trajectory") else Sqs2tdb
+        sqs_cls = _make_tracking_sqs2tdb() if cfg.get("track_trajectory") else Sqs2tdb
 
         path1 = Path(cfg["path1"]).expanduser().resolve()
 
@@ -1338,7 +1428,7 @@ def _run_pipeline(cfg: dict[str, Any], job: JobState) -> None:
         except Exception as _pre_e:
             job.push_log(f"[studio] Calculator pre-load warning: {_pre_e}")
 
-        pipeline = SqsCls(
+        pipeline = sqs_cls(
             fmax=cfg["fmax"],
             calculator=calculator,
             md_temperature=cfg.get("md_temperature", 1000),
@@ -1384,6 +1474,7 @@ def _run_pipeline(cfg: dict[str, Any], job: JobState) -> None:
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
+
 
 class StudioHandler(BaseHTTPRequestHandler):
     """HTTP request handler for PhaseForge Studio."""
@@ -1558,7 +1649,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._json(get_live_structure(_resolve(self.cfg, "path1")))
 
         elif path.startswith("/files/"):
-            rel = unquote(path[len("/files/"):])
+            rel = unquote(path[len("/files/") :])
             full = _resolve(self.cfg, "path1") / rel
             if not full.is_file():
                 self._json({"error": "not found"}, 404)
@@ -1591,15 +1682,17 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             cfg_snapshot = dict(self.cfg)
             # Save finished job to history before starting new one
-            global _job_counter
+            global _job_counter  # noqa: PLW0603
             if _job.job_id and _job.state in ("done", "error", "idle"):
-                _job_history.append({
-                    "job_id": _job.job_id,
-                    "job_name": _job.job_name,
-                    "state": _job.state,
-                    "start_time": _job.start_time,
-                    "end_time": _job.end_time,
-                })
+                _job_history.append(
+                    {
+                        "job_id": _job.job_id,
+                        "job_name": _job.job_name,
+                        "state": _job.state,
+                        "start_time": _job.start_time,
+                        "end_time": _job.end_time,
+                    }
+                )
             _job_counter += 1
             species_str = "".join(cfg_snapshot.get("species", []))
             lattice_str = "-".join(cfg_snapshot.get("lattices", []))
@@ -1707,6 +1800,7 @@ class StudioHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Parse args, load config, and serve."""

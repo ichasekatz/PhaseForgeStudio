@@ -21,7 +21,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import server  # noqa: E402  (must come after sys.path insertion)
 
-
 # ---------------------------------------------------------------------------
 # _split_xyz_frames
 # ---------------------------------------------------------------------------
@@ -109,6 +108,7 @@ def test_poscar_to_xyz_accepts_string() -> None:
 # scan_energies — composition sort (uses tmp filesystem, no heavy deps)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def mock_sqs_tree(tmp_path: Path) -> Path:
     """Minimal SQS tree with 'energy' files for sort testing."""
@@ -136,8 +136,8 @@ def test_scan_energies_sorted_consistently(mock_sqs_tree: Path) -> None:
     result = server.scan_energies(mock_sqs_tree)
     labels = result["labels"]
     # Pure Al (Al=1.0) has highest Al fraction — sorts first alphabetically by element
-    al_pure_idx = next(i for i, l in enumerate(labels) if "Al=1.0" in l)
-    al_fe_idx = next(i for i, l in enumerate(labels) if "Al=0.5" in l)
+    al_pure_idx = next(i for i, lbl in enumerate(labels) if "Al=1.0" in lbl)
+    al_fe_idx = next(i for i, lbl in enumerate(labels) if "Al=0.5" in lbl)
     # Al=1.0 > Al=0.5 in Al dimension → pure Al sorts after AlFe (descending)
     # Regardless of direction: order must be deterministic (no float instability)
     assert al_pure_idx != al_fe_idx  # distinct positions
@@ -166,6 +166,7 @@ def test_scan_energies_no_sqs_dir(tmp_path: Path) -> None:
 # Composition parse regex — matches scan_energies internal logic
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "dirname, expected",
     [
@@ -176,6 +177,7 @@ def test_scan_energies_no_sqs_dir(tmp_path: Path) -> None:
 )
 def test_composition_regex(dirname: str, expected: dict[str, float]) -> None:
     import re
+
     tokens = re.findall(r"a_([A-Za-z]+)=([\d.]+)", dirname)
     result = {el: pytest.approx(float(f), rel=1e-3) for el, f in tokens}
     for el, v in expected.items():
