@@ -3,8 +3,35 @@
 from __future__ import annotations
 
 import pickle
+import re
 from pathlib import Path
 from typing import Any
+
+
+def _parse_xyz_step_energies(xyz_path: Path) -> list[float] | None:
+    """Return per-frame eV/atom energies from a multi-frame extxyz file, or None."""
+    try:
+        text = xyz_path.read_text(errors="ignore")
+    except OSError:
+        return None
+    frames = _split_xyz_frames(text)
+    if not frames:
+        return None
+    energies: list[float] = []
+    for frame in frames:
+        lines = frame.splitlines()
+        if len(lines) < 2:
+            continue
+        m = re.search(r"energy\s*=\s*([-\d.eE+]+)", lines[1], re.IGNORECASE)
+        if not m:
+            continue
+        try:
+            n_atoms = int(lines[0].strip())
+            e = float(m.group(1))
+            energies.append(e / n_atoms if n_atoms > 0 else e)
+        except (ValueError, ZeroDivisionError):
+            continue
+    return energies if energies else None
 
 from phaseforge_studio.structure import _atoms_to_xyz, _positions_to_poscar
 
@@ -126,9 +153,9 @@ def get_system_step_energies(path1: Path, label: str) -> list[dict[str, Any]]:
     for root in roots:
         if not root.is_dir():
             continue
-        for traj_pkl in root.rglob("trajectory.pkl"):
-            if traj_pkl.parent.name == label:
-                parent_dir = traj_pkl.parent.parent
+        for traj in list(root.rglob("trajectory.pkl")) + list(root.rglob("trajectory.xyz")):
+            if traj.parent.name == label:
+                parent_dir = traj.parent.parent
                 break
         if parent_dir:
             break
@@ -137,26 +164,33 @@ def get_system_step_energies(path1: Path, label: str) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for subdir in sorted(parent_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        energies_per_atom: list[float] = []
+        # Prefer pkl (richer data); fall back to xyz (available during live mode)
         pkl = subdir / "trajectory.pkl"
-        if not pkl.exists():
-            continue
-        try:
-            with pkl.open("rb") as f:
-                data = pickle.load(f)
-            pot_e = data.get("potential_energies", [])
-            chem_sym = data.get("chemical_symbols", [])
-            n_atoms = len(chem_sym[0]) if chem_sym else 1
-            energies_per_atom = [e / n_atoms for e in pot_e]
-            if energies_per_atom:
-                results.append(
-                    {
-                        "label": subdir.name,
-                        "steps": list(range(len(energies_per_atom))),
-                        "energies": energies_per_atom,
-                    }
-                )
-        except Exception:
-            continue
+        if pkl.exists():
+            try:
+                with pkl.open("rb") as f:
+                    data = pickle.load(f)
+                pot_e = data.get("potential_energies", [])
+                chem_sym = data.get("chemical_symbols", [])
+                n_atoms = len(chem_sym[0]) if chem_sym else 1
+                energies_per_atom = [e / n_atoms for e in pot_e]
+            except Exception:
+                pass
+        if not energies_per_atom:
+            xyz = subdir / "trajectory.xyz"
+            if xyz.exists():
+                energies_per_atom = _parse_xyz_step_energies(xyz) or []
+        if energies_per_atom:
+            results.append(
+                {
+                    "label": subdir.name,
+                    "steps": list(range(len(energies_per_atom))),
+                    "energies": energies_per_atom,
+                }
+            )
     return results
 
 
