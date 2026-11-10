@@ -1225,6 +1225,11 @@ async function pollLiveStructure() {
     // Update source label
     const srcLbl = document.getElementById("struct-source-label");
     if (srcLbl && d.label) srcLbl.textContent = `live: ${d.label}`;
+
+    // Refresh system energy chart if that tab is active
+    if (energyTabMode === "system" && document.getElementById("tab-energy")?.classList.contains("active")) {
+      loadEnergies();
+    }
   } catch {}
 }
 
