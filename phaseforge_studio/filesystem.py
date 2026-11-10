@@ -86,7 +86,7 @@ def scan_latest_structure(path1: Path) -> dict[str, Any]:
     Returns:
         Dict with ``structure`` (str or None), ``format``, ``source``, ``label``.
     """
-    search_roots = [path1 / "Jobs", path1 / "Files" / "SQS", path1 / "Files" / "Comps"]
+    search_roots = [path1 / "Jobs"]
     best_contcar: tuple[float, Path] | None = None
     best_bestsqs: tuple[float, Path] | None = None
 
@@ -158,7 +158,7 @@ def scan_energies(path1: Path) -> dict[str, Any]:
     Returns:
         Dict with ``labels`` (list[str]) and ``energies`` (list[float]) in eV/atom.
     """
-    roots = [path1 / "Jobs", path1 / "Files" / "SQS"]
+    roots = [path1 / "Jobs"]
     energy_files: list[Path] = []
     for root in roots:
         if root.is_dir():
@@ -202,7 +202,7 @@ def scan_outputs(path1: Path) -> list[dict[str, Any]]:
         List of dicts with ``name``, ``rel_path``, ``file_type``, ``mtime``, ``size``.
     """
     results: list[dict[str, Any]] = []
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
@@ -319,7 +319,7 @@ def scan_structures(path1: Path) -> list[dict[str, Any]]:
         List of dicts with ``label``, ``rel_path``, ``source``, ``format``, ``mtime``.
     """
     results: list[dict[str, Any]] = []
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
@@ -352,7 +352,7 @@ def get_structure_by_label(path1: Path, label: str) -> dict[str, Any]:
     Returns:
         Dict with ``structure``, ``format``, ``source``, ``label``.
     """
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
@@ -385,7 +385,7 @@ def get_live_structure(path1: Path) -> dict[str, Any]:
     """
     from phaseforge_studio.trajectory import _split_xyz_frames
 
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     best: tuple[float, Path] | None = None
 
     for root in roots:

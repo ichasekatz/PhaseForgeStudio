@@ -81,7 +81,7 @@ def get_trajectory_xyz(path1: Path, label: str) -> str | None:
     """
     import numpy as np
 
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
@@ -148,7 +148,7 @@ def get_system_step_energies(path1: Path, label: str) -> list[dict[str, Any]]:
     Returns:
         List of dicts with keys ``label``, ``steps``, ``energies`` (eV/atom).
     """
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     parent_dir: Path | None = None
     for root in roots:
         if not root.is_dir():
@@ -205,7 +205,7 @@ def get_trajectory_data(path1: Path, label: str) -> dict[str, Any] | None:
         Dict with ``steps``, ``energies`` (eV/atom), and ``n_frames``,
         or None if not found.
     """
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
@@ -244,7 +244,7 @@ def get_trajectory_frame(path1: Path, label: str, frame: int) -> dict[str, Any] 
     """
     import numpy as np
 
-    roots = [path1 / "Jobs", path1 / "Files"]
+    roots = [path1 / "Jobs"]
     for root in roots:
         if not root.is_dir():
             continue
