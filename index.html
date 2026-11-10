@@ -1240,17 +1240,23 @@ function renderStructure(text, format, {preserveCamera = false} = {}) {
     if (showForces && (format === "xyz" || !format)) _renderForceArrowsFromXYZ(text);
     if (savedView) {
       viewer.setView(savedView);
+      viewer.render();
     } else {
       const tab = document.getElementById("tab-structure");
       const visible = tab && tab.classList.contains("active");
+      viewer.render();
       if (visible) {
-        viewer.zoomTo();
+        // Defer one animation frame so the canvas has its final CSS size
+        requestAnimationFrame(() => {
+          if (typeof viewer.resize === "function") viewer.resize();
+          viewer.zoomTo();
+          viewer.render();
+        });
         _pendingZoom = false;
       } else {
         _pendingZoom = true; // defer until tab becomes visible
       }
     }
-    viewer.render();
     initAtomTooltip();
   } catch (e) {
     console.warn("renderStructure error:", e);
