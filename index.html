@@ -1686,11 +1686,14 @@ function renderStepEnergies(data) {
   energyChart.data.datasets[0].backgroundColor = "rgba(232,160,48,0.08)";
   energyChart.data.datasets[0].showLine = true;
   energyChart.data.datasets[0].pointRadius = 2;
-  // Auto-scale y to data range
-  const valid = data.energies.filter(e => e != null);
+  // Auto-scale y to data range with padding
+  const valid = data.energies.filter(e => e != null && isFinite(e));
   if (valid.length) {
-    energyChart.options.scales.y.min = Math.min(...valid);
-    energyChart.options.scales.y.max = Math.max(...valid);
+    const lo = Math.min.apply(null, valid);
+    const hi = Math.max.apply(null, valid);
+    const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 0.1;
+    energyChart.options.scales.y.min = lo - pad;
+    energyChart.options.scales.y.max = hi + pad;
   } else {
     energyChart.options.scales.y.min = undefined;
     energyChart.options.scales.y.max = undefined;
@@ -1719,11 +1722,14 @@ function renderSystemEnergies(curves) {
     showLine: true,
   }));
   if (frameDot) energyChart.data.datasets.push(frameDot);
-  // Auto-scale y
-  const allE = curves.flatMap(c => c.energies).filter(e => e != null);
+  // Auto-scale y with 5% padding so curves at extremes aren't clipped
+  const allE = curves.flatMap(c => c.energies).filter(e => e != null && isFinite(e));
   if (allE.length) {
-    energyChart.options.scales.y.min = Math.min(...allE);
-    energyChart.options.scales.y.max = Math.max(...allE);
+    const lo = Math.min.apply(null, allE);
+    const hi = Math.max.apply(null, allE);
+    const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.05 || 0.1;
+    energyChart.options.scales.y.min = lo - pad;
+    energyChart.options.scales.y.max = hi + pad;
   } else {
     energyChart.options.scales.y.min = undefined;
     energyChart.options.scales.y.max = undefined;
