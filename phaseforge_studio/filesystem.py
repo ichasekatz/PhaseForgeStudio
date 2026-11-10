@@ -247,7 +247,7 @@ def browse_path(path1: Path, rel: str) -> dict[str, Any]:
     if not target.exists() or not target.is_dir():
         return {"path": display_path, "entries": []}
 
-    _root_output_dirs = {"Files", "Jobs", "Comps", "SQS", "Phase_Diagrams", "BCC_Benchmark", "Outputs"}
+    _root_output_dirs = {"Jobs"}
 
     entries: list[dict[str, Any]] = []
     try:
