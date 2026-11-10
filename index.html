@@ -353,6 +353,8 @@ select option { background: var(--bg3); }
 .browser-icon { font-size: 13px; flex-shrink: 0; }
 .browser-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-sub { font-size: 10px; color: var(--text2); flex-shrink: 0; }
+.browser-cb { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.browser-entry.checked { background: rgba(248,81,73,0.08); border-left-color: #F85149; }
 
 /* ── Modal ──────────────────────────────────────────────── */
 #modal {
@@ -644,6 +646,13 @@ select option { background: var(--bg3); }
       <span style="flex:1">Files</span>
       <button class="btn" style="padding:2px 7px;font-size:10px;" onclick="browseLatest()" title="Jump to latest structure">Latest ↗</button>
       <button class="btn" style="padding:2px 7px;font-size:10px;" onclick="browseRefresh()">↻</button>
+      <button id="edit-files-btn" class="btn" style="padding:2px 7px;font-size:10px;" onclick="toggleBrowserEdit()">Edit</button>
+    </div>
+    <div id="browser-delete-bar" style="display:none;align-items:center;gap:6px;padding:4px 10px;background:rgba(248,81,73,0.08);border-bottom:1px solid rgba(248,81,73,0.3);">
+      <span id="browser-sel-count" style="flex:1;font-size:11px;color:#F85149;font-family:var(--font);">0 selected</span>
+      <button class="btn" style="padding:2px 7px;font-size:10px;color:#8B949E;" onclick="browserSelectAll()">All</button>
+      <button class="btn" style="padding:2px 7px;font-size:10px;color:#8B949E;" onclick="browserSelectNone()">None</button>
+      <button class="btn" id="browser-trash-btn" style="padding:2px 7px;font-size:10px;color:#F85149;border-color:#F85149;opacity:.4;pointer-events:none;" onclick="confirmDeleteSelected()">🗑 Delete</button>
     </div>
     <div id="browser-crumb" style="
       display:flex;align-items:center;flex-wrap:wrap;gap:2px;
@@ -689,6 +698,18 @@ select option { background: var(--bg3); }
   <img id="modal-img" src="" alt="plot">
 </div>
 
+<!-- Delete confirmation dialog -->
+<div id="delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:300;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid #F85149;border-radius:6px;padding:20px 24px;max-width:420px;width:90%;font-family:var(--font);">
+    <div style="color:#F85149;font-size:14px;font-weight:600;margin-bottom:8px;">⚠ Delete files?</div>
+    <div id="delete-modal-msg" style="color:var(--text2);font-size:12px;margin-bottom:16px;line-height:1.5;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" style="font-size:11px;" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn" id="delete-confirm-btn" style="font-size:11px;color:#F85149;border-color:#F85149;" onclick="executeDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ──────────────────────────────────────────────────
 let cfg = {};
@@ -704,6 +725,8 @@ let calcMeta = {};
 
 // File browser state
 let browserPath = "";
+let browserEditMode = false;
+let browserChecked = new Set(); // rel_paths currently checked
 let activeStructurePath = "";
 
 // Trajectory state — in-memory frame array (BLADE pattern)
@@ -1794,10 +1817,18 @@ function renderBrowserList(entries) {
     const icon = icons[e.kind] || "📃";
     const sub = e.kind === "dir" ? "" : e.size < 1024 ? `${e.size}B` : `${(e.size/1024).toFixed(1)}K`;
     const isActive = e.rel_path === activeStructurePath;
-    // Escape single quotes in rel_path and name for inline onclick
+    const isChecked = browserChecked.has(e.rel_path);
     const rp = e.rel_path.replace(/'/g, "\\'");
     const nm = e.name.replace(/'/g, "\\'");
-    return `<div class="browser-entry${isActive ? " active-structure" : ""}" data-rel="${e.rel_path.replace(/"/g,'&quot;')}" onclick="onBrowserClick('${rp}','${e.kind}','${nm}')">
+    const rpq = e.rel_path.replace(/"/g, '&quot;');
+    const cbHtml = browserEditMode
+      ? `<input type="checkbox" class="browser-cb" ${isChecked ? "checked" : ""} onclick="event.stopPropagation();browserToggleCheck('${rp}',this)">`
+      : "";
+    const clickHandler = browserEditMode
+      ? `onclick="browserToggleCheck('${rp}',this.querySelector('input'))"`
+      : `onclick="onBrowserClick('${rp}','${e.kind}','${nm}')"`;
+    return `<div class="browser-entry${isActive ? " active-structure" : ""}${isChecked ? " checked" : ""}" data-rel="${rpq}" ${clickHandler}>
+      ${cbHtml}
       <span class="browser-icon">${icon}</span>
       <span class="browser-name" title="${e.name}">${e.name}</span>
       ${sub ? `<span class="browser-sub">${sub}</span>` : ""}
@@ -1896,6 +1927,117 @@ async function browseLatest() {
 
 async function browseRefresh() {
   browseDir(browserPath || "");
+}
+
+// ── Edit / delete mode ─────────────────────────────────────
+function toggleBrowserEdit() {
+  browserEditMode = !browserEditMode;
+  browserChecked.clear();
+  const btn = document.getElementById("edit-files-btn");
+  const bar = document.getElementById("browser-delete-bar");
+  if (browserEditMode) {
+    btn.style.color = "var(--accent)";
+    btn.style.borderColor = "var(--accent)";
+    btn.textContent = "Done";
+    bar.style.display = "flex";
+  } else {
+    btn.style.color = "";
+    btn.style.borderColor = "";
+    btn.textContent = "Edit";
+    bar.style.display = "none";
+  }
+  _updateDeleteBar();
+  browseRefresh();
+}
+
+function browserToggleCheck(relPath, cb) {
+  if (!browserEditMode) return;
+  if (browserChecked.has(relPath)) {
+    browserChecked.delete(relPath);
+  } else {
+    browserChecked.add(relPath);
+  }
+  // Sync checkbox visual state
+  if (cb) cb.checked = browserChecked.has(relPath);
+  // Sync row highlight
+  const esc = relPath.replace(/"/g, '&quot;');
+  const row = document.querySelector(`[data-rel="${esc}"]`);
+  if (row) row.classList.toggle("checked", browserChecked.has(relPath));
+  _updateDeleteBar();
+}
+
+function browserSelectAll() {
+  document.querySelectorAll(".browser-entry[data-rel]").forEach(row => {
+    const rel = row.dataset.rel;
+    browserChecked.add(rel);
+    row.classList.add("checked");
+    const cb = row.querySelector("input[type=checkbox]");
+    if (cb) cb.checked = true;
+  });
+  _updateDeleteBar();
+}
+
+function browserSelectNone() {
+  browserChecked.clear();
+  document.querySelectorAll(".browser-entry").forEach(row => {
+    row.classList.remove("checked");
+    const cb = row.querySelector("input[type=checkbox]");
+    if (cb) cb.checked = false;
+  });
+  _updateDeleteBar();
+}
+
+function _updateDeleteBar() {
+  const n = browserChecked.size;
+  const countEl = document.getElementById("browser-sel-count");
+  const trashBtn = document.getElementById("browser-trash-btn");
+  if (countEl) countEl.textContent = n === 1 ? "1 selected" : `${n} selected`;
+  if (trashBtn) {
+    trashBtn.style.opacity = n > 0 ? "1" : ".4";
+    trashBtn.style.pointerEvents = n > 0 ? "auto" : "none";
+  }
+}
+
+function confirmDeleteSelected() {
+  if (!browserChecked.size) return;
+  const paths = [...browserChecked];
+  const names = paths.map(p => p.split("/").pop());
+  const preview = names.slice(0, 5).map(n => `• ${n}`).join("\n");
+  const extra = names.length > 5 ? `\n… and ${names.length - 5} more` : "";
+  const msg = document.getElementById("delete-modal-msg");
+  msg.innerHTML = `<strong style="color:var(--text)">${paths.length} item${paths.length > 1 ? "s" : ""} will be permanently deleted:</strong><br><pre style="margin:8px 0 0;font-size:11px;color:var(--text2);white-space:pre-wrap">${preview}${extra}</pre><br><span style="color:#F85149">This cannot be undone.</span>`;
+  document.getElementById("delete-modal").style.display = "flex";
+}
+
+function closeDeleteModal() {
+  document.getElementById("delete-modal").style.display = "none";
+}
+
+async function executeDelete() {
+  const paths = [...browserChecked];
+  const btn = document.getElementById("delete-confirm-btn");
+  btn.textContent = "Deleting…";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({paths}),
+    });
+    const d = await r.json();
+    if (d.errors && d.errors.length) {
+      alert("Some deletions failed:\n" + d.errors.join("\n"));
+    }
+    browserChecked.clear();
+    _updateDeleteBar();
+    closeDeleteModal();
+    browseRefresh();
+  } catch (e) {
+    alert("Delete failed: " + e);
+  } finally {
+    btn.textContent = "Delete";
+    btn.disabled = false;
+  }
 }
 
 // ── Phase diagrams tab ─────────────────────────────────────

@@ -293,6 +293,39 @@ class StudioHandler(BaseHTTPRequestHandler):
             _job.stop()
             self._json({"ok": True})
 
+        elif path == "/api/delete":
+            import shutil
+
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            paths = body.get("paths", [])
+            if not paths:
+                self._json({"error": "no paths"}, 400)
+                return
+            path1 = _resolve(self.cfg, "path1")
+            errors: list[str] = []
+            deleted: list[str] = []
+            for rel in paths:
+                # Sanitize: strip leading slashes and block traversal
+                safe_rel = rel.strip("/").replace("..", "")
+                target = (path1 / safe_rel).resolve()
+                # Must stay inside path1
+                if not str(target).startswith(str(path1) + "/") and target != path1:
+                    errors.append(f"forbidden: {rel}")
+                    continue
+                try:
+                    if target.is_dir():
+                        shutil.rmtree(target)
+                    elif target.exists():
+                        target.unlink()
+                    deleted.append(rel)
+                except OSError as e:
+                    errors.append(str(e))
+            self._json({"ok": not errors, "deleted": deleted, "errors": errors})
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())
