@@ -1197,6 +1197,8 @@ async function pollLiveStructure() {
       renderStructure(d.xyz, "xyz", {preserveCamera: true});
     }
 
+    // Keep trajData label current so energy "system" lookups work in live mode
+    if (d.label) trajData = { label: d.label };
     // Update source label
     const srcLbl = document.getElementById("struct-source-label");
     if (srcLbl && d.label) srcLbl.textContent = `live: ${d.label}`;
@@ -1471,7 +1473,8 @@ function _applyFrames(frames) {
   // Only jump to latest frame when in live mode; otherwise keep current position
   if (liveMode || trajIdx >= frames.length - 1) showFrame(frames.length - 1);
   else _syncSlider(trajIdx);
-  updateEnergyChartFromFrames();
+  // Only overwrite the chart when in step mode; system/all modes manage their own view
+  if (energyTabMode === "step") updateEnergyChartFromFrames();
 }
 
 async function loadTrajData(label) {
