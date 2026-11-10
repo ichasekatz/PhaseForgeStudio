@@ -114,6 +114,20 @@ header h1 span { color: var(--text2); font-weight: 400; }
 .stage-pill.done    { border-color: var(--green);  color: var(--green); }
 
 header .spacer { flex: 0 0 4px; }
+#live-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color .2s, border-color .2s, background .2s;
+}
+#live-btn:hover { border-color: var(--accent); color: var(--text); }
+#live-btn.active { color: #F85149; border-color: #F85149; background: rgba(248,81,73,0.1); }
 .btn {
   padding: 4px 10px;
   border-radius: var(--radius);
@@ -400,6 +414,7 @@ select option { background: var(--bg3); }
   </div>
   <span id="refresh-badge" style="font-family:var(--font);font-size:10px;color:var(--text2);flex-shrink:0;">— —</span>
   <button class="btn" onclick="refreshAll()" title="Refresh outputs">↻ Refresh</button>
+  <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="font-size:12px;padding:4px 12px;">⬤ Live</button>
   <button class="btn danger" id="btn-stop" onclick="stopJob()" disabled>Stop</button>
   <button class="btn primary" id="btn-run" onclick="runJob()">Run</button>
 </header>
@@ -566,7 +581,6 @@ select option { background: var(--bg3); }
         </select>
         <button class="btn" onclick="resetCamera()">Reset</button>
         <button class="btn" onclick="loadStructure()">↻</button>
-        <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:2px 8px;border-radius:3px;font-family:var(--font);font-size:10px;cursor:pointer;">⬤ Live</button>
         <span id="struct-source-label"></span>
       </div>
       <!-- Trajectory controls -->
@@ -1172,18 +1186,14 @@ function toggleLiveMode() {
   liveMode = !liveMode;
   const btn = document.getElementById("live-btn");
   if (liveMode) {
-    btn.style.color = "#F85149";
-    btn.style.borderColor = "#F85149";
-    btn.textContent = "⬤ Live";
+    btn.classList.add("active");
     startLivePoll();
     // Show traj controls so slider is visible
     const ctrl = document.getElementById("traj-controls");
     ctrl.style.display = "flex";
     switchTab("structure");
   } else {
-    btn.style.color = "";
-    btn.style.borderColor = "";
-    btn.textContent = "⬤ Live";
+    btn.classList.remove("active");
     stopLivePoll();
   }
 }
