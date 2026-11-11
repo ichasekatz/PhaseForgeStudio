@@ -32,8 +32,16 @@ _default_config: dict[str, Any] = {
     "path2": "",
     "blade_path1": "",
     "blade_toml": "examples/full_framework.toml",
-    "active_workspace": "phaseforge",
+    "active_workspace": "mf",
     "device": "cpu",
+    "pf_workdir": "",
+    "pf_elements": ["Ni", "Re"],
+    "pf_lattices": ["FCC_A1"],
+    "pf_level": 2,
+    "pf_mlip": "grace",
+    "pf_model": "GRACE-2L-OMAT",
+    "pf_vib": False,
+    "pf_sro": False,
 }
 
 _fallback_calculators: list[str] = [

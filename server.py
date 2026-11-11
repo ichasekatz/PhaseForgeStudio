@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import base64 as _b64
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -34,7 +35,6 @@ for _src in [_gui_dir / "MaterialsFramework" / "src"]:
     if _src.exists() and _s not in sys.path:
         sys.path.insert(0, _s)
 
-# _job_counter is mutated by the handler; keep a module-level reference.
 import phaseforge_studio.job as _job_mod  # noqa: E402
 from phaseforge_studio import (  # noqa: E402
     _job,
@@ -79,6 +79,15 @@ from phaseforge_studio.blade import (  # noqa: E402
     serve_blade_index,
 )
 from phaseforge_studio.config import _server_dir  # noqa: E402
+
+
+class _PfState:
+    proc: subprocess.Popen | None = None
+    state: str = "idle"  # idle | running | done | error
+    log: list[str] = []
+
+
+_pf = _PfState()
 
 
 class StudioHandler(BaseHTTPRequestHandler):
@@ -402,6 +411,9 @@ class StudioHandler(BaseHTTPRequestHandler):
             else:
                 self._json({"error": "not found"}, 404)
 
+        elif path == "/api/pf_status":
+            self._json({"state": _pf.state, "log_tail": _pf.log[-40:]})
+
         elif path.startswith("/files/"):
             rel = unquote(path[len("/files/") :])
             full = _resolve(self.cfg, "path1") / rel
@@ -411,6 +423,28 @@ class StudioHandler(BaseHTTPRequestHandler):
             ext = full.suffix.lower()
             mime_map = {".tdb": "text/plain", ".png": "image/png", ".gif": "image/gif", ".json": "application/json"}
             self._serve_file(full, mime_map.get(ext, "application/octet-stream"))
+
+        elif path.startswith("/pf_file/"):
+            rel = unquote(path[len("/pf_file/") :])
+            workdir = Path(self.cfg.get("pf_workdir", "")).expanduser().resolve()
+            if not str(workdir) or workdir == Path().resolve():
+                self._json({"error": "pf_workdir not set"}, 400)
+                return
+            target = (workdir / rel).resolve()
+            if not str(target).startswith(str(workdir)):
+                self._json({"error": "forbidden"}, 403)
+                return
+            if not target.exists():
+                self._json({"error": "not found"}, 404)
+                return
+            ctype = "image/png" if target.suffix == ".png" else "application/octet-stream"
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
 
         else:
             self._json({"error": "not found"}, 404)
@@ -503,14 +537,90 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError):
                 self._json({"error": "invalid JSON"}, 400)
                 return
-            workspace = body.get("workspace", "phaseforge")
-            if workspace not in ("phaseforge", "blade"):
+            workspace = body.get("workspace", "mf")
+            if workspace not in ("pf", "mf", "phaseforge", "blade"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
             StudioHandler.cfg = self.cfg
             _save_config(self.config_path, self.cfg)
             self._json({"ok": True, "active_workspace": workspace})
+
+        elif path == "/api/pf_run":
+            if _pf.proc is not None and _pf.proc.poll() is None:
+                self._json({"error": "sqscal already running"}, 409)
+                return
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            elements = body.get("elements", [])
+            lattices = body.get("lattices", [])
+            level = int(body.get("level", 2))
+            mlip = body.get("mlip", "grace")
+            model = body.get("model", "")
+            vib = bool(body.get("vib", False))
+            sro = bool(body.get("sro", False))
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if not elements or not lattices:
+                self._json({"error": "elements and lattices required"}, 400)
+                return
+            cmd = ["sqscal", "-e", ",".join(elements), "-l", ",".join(lattices), "-lv", str(level), "-mlip", mlip]
+            if model:
+                cmd += ["-model", model]
+            if vib:
+                cmd.append("-vib")
+            if sro:
+                cmd.append("-sro")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir and workdir.is_dir() else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "sqscal not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+
+            def _stream(proc: subprocess.Popen) -> None:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    _pf.log.append(line.rstrip("\n"))
+                proc.wait()
+                _pf.state = "done" if proc.returncode == 0 else "error"
+
+            threading.Thread(target=_stream, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_stop":
+            if _pf.proc is not None and _pf.proc.poll() is None:
+                _pf.proc.terminate()
+            _pf.state = "idle"
+            self._json({"ok": True})
+
+        elif path == "/api/pf_outputs":
+            workdir_str = self.cfg.get("pf_workdir", "")
+            if not workdir_str:
+                self._json({"tdb": [], "png": []})
+                return
+            workdir = Path(workdir_str).expanduser().resolve()
+            if not workdir.is_dir():
+                self._json({"tdb": [], "png": []})
+                return
+            tdb_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.tdb"))
+            png_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.png"))
+            self._json({"tdb": tdb_files, "png": png_files})
 
         elif path == "/api/analyze":
             try:

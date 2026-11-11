@@ -256,9 +256,12 @@ def scan_comps(files_dir: Path, comps_folder: str = "Comps") -> list[dict]:
 
 
 def scan_plots(files_dir: Path) -> list[dict]:
+    comps_dir = files_dir / "Comps"
+    if not comps_dir.exists():
+        return []
     plots = []
     for ext in ("*.png", "*.gif"):
-        for f in sorted(files_dir.rglob(ext)):
+        for f in sorted(comps_dir.rglob(ext)):
             plots.append(
                 {
                     "name": f.name,
