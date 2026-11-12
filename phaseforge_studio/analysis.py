@@ -169,14 +169,35 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
         if analyzer_name == "eos":
             from materialsframework.analysis.eos import EOSAnalyzer
 
-            result = EOSAnalyzer(calculator=calculator).calculate(atoms, is_relaxed=is_relaxed)
+            analyzer = EOSAnalyzer(calculator=calculator)
+            # Compute V-E data once; try progressively simpler EOS models if fit fails
+            from pymatgen.analysis.eos import EOS, EOSError
+
+            structure = analyzer._ensure_relaxed(atoms, is_relaxed)
+            structures = analyzer.eos_transformation.apply_transformation(structure)
+            prev_relax_cell = analyzer.calculator.relax_cell
+            analyzer.calculator.relax_cell = False
+            try:
+                raw = [analyzer.calculator.relax(structure=s) for s in structures]
+                volume_list = [r["final_structure"].volume for r in raw]
+                energy_list = [r["energy"] for r in raw]
+            finally:
+                analyzer.calculator.relax_cell = prev_relax_cell
+
+            fit_result: dict[str, float] = {}
+            for eos_name in ("birch_murnaghan", "murnaghan", "vinet"):
+                try:
+                    f = EOS(eos_name=eos_name).fit(volumes=volume_list, energies=energy_list)
+                    fit_result = {"b0_GPa": float(f.b0_GPa), "v0": float(f.v0), "e0": float(f.e0), "eos_name": eos_name}
+                    break
+                except (EOSError, Exception):
+                    continue
+
             return {
                 "analyzer": "eos",
-                "volumes": [float(v) for v in result["volumes"]],
-                "energies": [float(e) for e in result["energies"]],
-                "b0_GPa": float(result["b0_GPa"]),
-                "v0": float(result["v0"]),
-                "e0": float(result["e0"]),
+                "volumes": [float(v) for v in volume_list],
+                "energies": [float(e) for e in energy_list],
+                **fit_result,
             }
 
         if analyzer_name == "elastic_constants":
