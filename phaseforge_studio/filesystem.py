@@ -164,28 +164,30 @@ def scan_energies(path1: Path) -> dict[str, Any]:
         if root.is_dir():
             energy_files.extend(root.rglob("energy"))
 
-    records: list[tuple[dict[str, float], str, Path]] = []
+    records: list[tuple[dict[str, float], str, str, Path]] = []
     all_elements: set[str] = set()
     for ef in energy_files:
         tokens = re.findall(r"a_([A-Za-z]+)=([\d.]+)", ef.parent.name)
         fracs = {el: round(float(f), 6) for el, f in tokens}
         all_elements.update(fracs.keys())
-        records.append((fracs, ef.parent.name, ef))
+        phase = ef.parent.parent.name
+        records.append((fracs, phase, ef.parent.name, ef))
 
     sorted_els = sorted(all_elements)
 
     def _key(rec: tuple) -> tuple:
-        fracs, dirname, _ = rec
-        return tuple(fracs.get(el, 0.0) for el in sorted_els) + (dirname,)
+        fracs, phase, dirname, _ = rec
+        return tuple(fracs.get(el, 0.0) for el in sorted_els) + (phase, dirname)
 
     energies: list[float] = []
     labels: list[str] = []
-    for _fracs, dirname, ef in sorted(records, key=_key):
+    for _fracs, phase, dirname, ef in sorted(records, key=_key):
         try:
             val = float(ef.read_text().strip())
             n_atoms = _count_atoms_from_atat(ef.parent)
             energies.append(val / n_atoms if n_atoms > 0 else val)
-            labels.append(dirname)
+            comp_part = re.sub(r"^sqs_lev=\d+_", "", dirname)
+            labels.append(f"{phase} · {comp_part}")
         except (OSError, ValueError):
             continue
 
