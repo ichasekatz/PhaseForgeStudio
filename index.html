@@ -758,6 +758,10 @@ select option { background: var(--bg3); }
         <button class="energy-tab-btn active" id="etab-all" onclick="switchEnergyTab('all')">all comps</button>
         <button class="energy-tab-btn" id="etab-step" onclick="switchEnergyTab('step')">step (selected)</button>
         <button class="energy-tab-btn" id="etab-system" onclick="switchEnergyTab('system')">all in system</button>
+        <select id="energy-phase-filter" onchange="applyEnergyPhaseFilter()"
+          style="margin-left:10px;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;display:none;">
+          <option value="">All phases</option>
+        </select>
         <span id="energy-comp-label" style="font-family:var(--font);font-size:10px;color:var(--accent);margin-left:8px;"></span>
       </div>
       <div id="chart-tab">
@@ -2072,33 +2076,56 @@ async function loadEnergies() {
 // Palette for multi-curve system view
 const _CURVE_COLORS = ["#E8A030","#58A6FF","#3FB950","#F85149","#A78BFA","#79C0FF","#FFA657","#FF7B72","#56D364","#D2A8FF"];
 
+let _allEnergiesRaw = null;
+
 async function renderAllEnergies() {
   try {
     const r = await fetch("/api/energies");
     const data = await r.json();
-    const empty = document.getElementById("chart-empty");
     if (!data.energies || data.energies.length === 0) {
       document.getElementById("energy-chart").style.display = "none";
-      empty.style.display = "block";
+      document.getElementById("chart-empty").style.display = "block";
+      document.getElementById("energy-phase-filter").style.display = "none";
       return;
     }
-    document.getElementById("energy-chart").style.display = "";
-    empty.style.display = "none";
-    if (!energyChart) return;
-    // Reset to single-dataset mode
-    energyChart.data.datasets = energyChart.data.datasets.slice(0, 2);
-    energyChart.data.labels = data.labels || [];
-    energyChart.data.datasets[0].label = "Final Energy (eV/atom)";
-    energyChart.data.datasets[0].data = data.energies;
-    energyChart.data.datasets[0].borderColor = "#E8A030";
-    energyChart.data.datasets[0].backgroundColor = "rgba(232,160,48,0.08)";
-    energyChart.data.datasets[0].showLine = true;
-    energyChart.data.datasets[0].pointRadius = 4;
-    // Reset y-axis auto-scale
-    energyChart.options.scales.y.min = undefined;
-    energyChart.options.scales.y.max = undefined;
-    energyChart.update();
+    _allEnergiesRaw = data;
+    // Populate phase dropdown
+    const sel = document.getElementById("energy-phase-filter");
+    const phases = [...new Set((data.labels || []).map(l => l.split(" · ")[0]))].sort();
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">All phases</option>' +
+      phases.map(p => `<option value="${p}"${p === prev ? " selected" : ""}>${p}</option>`).join("");
+    sel.style.display = phases.length > 1 ? "" : "none";
+    applyEnergyPhaseFilter();
   } catch {}
+}
+
+function applyEnergyPhaseFilter() {
+  if (!_allEnergiesRaw || !energyChart) return;
+  const phase = document.getElementById("energy-phase-filter").value;
+  const rawLabels = _allEnergiesRaw.labels || [];
+  const rawEnergies = _allEnergiesRaw.energies || [];
+  const filtered = rawLabels.reduce((acc, lbl, i) => {
+    if (!phase || lbl.startsWith(phase + " · ")) {
+      acc.labels.push(lbl);
+      acc.energies.push(rawEnergies[i]);
+    }
+    return acc;
+  }, {labels: [], energies: []});
+
+  document.getElementById("energy-chart").style.display = "";
+  document.getElementById("chart-empty").style.display = "none";
+  energyChart.data.datasets = energyChart.data.datasets.slice(0, 2);
+  energyChart.data.labels = filtered.labels;
+  energyChart.data.datasets[0].label = "Final Energy (eV/atom)";
+  energyChart.data.datasets[0].data = filtered.energies;
+  energyChart.data.datasets[0].borderColor = "#E8A030";
+  energyChart.data.datasets[0].backgroundColor = "rgba(232,160,48,0.08)";
+  energyChart.data.datasets[0].showLine = true;
+  energyChart.data.datasets[0].pointRadius = 4;
+  energyChart.options.scales.y.min = undefined;
+  energyChart.options.scales.y.max = undefined;
+  energyChart.update();
 }
 
 function renderStepEnergies(data) {
