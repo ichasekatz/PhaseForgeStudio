@@ -162,35 +162,44 @@ def get_system_step_energies(path1: Path, label: str) -> list[dict[str, Any]]:
     if not parent_dir:
         return []
 
+    # Scan all phase dirs within the same system (parent_dir.parent)
+    system_dir = parent_dir.parent
+    phase_dirs = sorted(
+        p for p in system_dir.iterdir()
+        if p.is_dir()
+    )
+
     results: list[dict[str, Any]] = []
-    for subdir in sorted(parent_dir.iterdir()):
-        if not subdir.is_dir():
-            continue
-        energies_per_atom: list[float] = []
-        # Prefer pkl (richer data); fall back to xyz (available during live mode)
-        pkl = subdir / "trajectory.pkl"
-        if pkl.exists():
-            try:
-                with pkl.open("rb") as f:
-                    data = pickle.load(f)
-                pot_e = data.get("potential_energies", [])
-                chem_sym = data.get("chemical_symbols", [])
-                n_atoms = len(chem_sym[0]) if chem_sym else 1
-                energies_per_atom = [e / n_atoms for e in pot_e]
-            except Exception:
-                pass
-        if not energies_per_atom:
-            xyz = subdir / "trajectory.xyz"
-            if xyz.exists():
-                energies_per_atom = _parse_xyz_step_energies(xyz) or []
-        if energies_per_atom:
-            results.append(
-                {
-                    "label": subdir.name,
-                    "steps": list(range(len(energies_per_atom))),
-                    "energies": energies_per_atom,
-                }
-            )
+    for phase_dir in phase_dirs:
+        for subdir in sorted(phase_dir.iterdir()):
+            if not subdir.is_dir():
+                continue
+            energies_per_atom: list[float] = []
+            pkl = subdir / "trajectory.pkl"
+            if pkl.exists():
+                try:
+                    with pkl.open("rb") as f:
+                        data = pickle.load(f)
+                    pot_e = data.get("potential_energies", [])
+                    chem_sym = data.get("chemical_symbols", [])
+                    n_atoms = len(chem_sym[0]) if chem_sym else 1
+                    energies_per_atom = [e / n_atoms for e in pot_e]
+                except Exception:
+                    pass
+            if not energies_per_atom:
+                xyz = subdir / "trajectory.xyz"
+                if xyz.exists():
+                    energies_per_atom = _parse_xyz_step_energies(xyz) or []
+            if energies_per_atom:
+                results.append(
+                    {
+                        "label": f"{phase_dir.name} · {subdir.name}",
+                        "phase": phase_dir.name,
+                        "raw_label": subdir.name,
+                        "steps": list(range(len(energies_per_atom))),
+                        "energies": energies_per_atom,
+                    }
+                )
     return results
 
 

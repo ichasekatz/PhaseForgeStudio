@@ -2013,6 +2013,11 @@ function switchEnergyTab(mode) {
   document.getElementById("etab-all").classList.toggle("active", mode === "all");
   document.getElementById("etab-step").classList.toggle("active", mode === "step");
   document.getElementById("etab-system").classList.toggle("active", mode === "system");
+  _allEnergiesRaw = null;
+  _systemCurvesRaw = null;
+  const _pf2 = document.getElementById("energy-phase-filter");
+  _pf2.innerHTML = '<option value="">All phases</option>';
+  _pf2.style.display = "none";
   loadEnergies();
 }
 
@@ -2041,6 +2046,7 @@ async function loadEnergies() {
               energies: frames.map(f => parseFrameEnergy(f)),
             };
             renderStepEnergies(energyStepData);
+            await _fetchSystemCurvesForStep(label);
             return;
           }
         }
@@ -2050,6 +2056,7 @@ async function loadEnergies() {
       if (!r2.ok) { await renderAllEnergies(); return; }
       energyStepData = await r2.json();
       renderStepEnergies(energyStepData);
+      await _fetchSystemCurvesForStep(label);
     } catch { await renderAllEnergies(); }
 
   } else if (energyTabMode === "system") {
@@ -2064,7 +2071,14 @@ async function loadEnergies() {
       if (!r.ok) { await renderAllEnergies(); return; }
       const d = await r.json();
       if (!d.curves || !d.curves.length) { await renderAllEnergies(); return; }
-      renderSystemEnergies(d.curves);
+      _systemCurvesRaw = d.curves;
+      const sel = document.getElementById("energy-phase-filter");
+      const phases = [...new Set(d.curves.map(c => c.phase || c.label.split(" · ")[0]))].sort();
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">All phases</option>' +
+        phases.map(p => `<option value="${p}"${p === prev ? " selected" : ""}>${p}</option>`).join("");
+      sel.style.display = phases.length > 1 ? "" : "none";
+      applyEnergyPhaseFilter();
     } catch { await renderAllEnergies(); }
 
   } else {
@@ -2077,6 +2091,44 @@ async function loadEnergies() {
 const _CURVE_COLORS = ["#E8A030","#58A6FF","#3FB950","#F85149","#A78BFA","#79C0FF","#FFA657","#FF7B72","#56D364","#D2A8FF"];
 
 let _allEnergiesRaw = null;
+let _systemCurvesRaw = null;
+
+async function _fetchSystemCurvesForStep(label) {
+  try {
+    const sr = await fetch(`/api/energies/system?label=${encodeURIComponent(label)}`);
+    if (!sr.ok) return;
+    const sd = await sr.json();
+    if (!sd.curves || !sd.curves.length) return;
+    _systemCurvesRaw = sd.curves;
+    const sel = document.getElementById("energy-phase-filter");
+    const phases = [...new Set(sd.curves.map(c => c.phase || c.label.split(" · ")[0]))].sort();
+    const currentPhase = (sd.curves.find(c => c.raw_label === label) || {}).phase || "";
+    sel.innerHTML = '<option value="">All phases</option>' +
+      phases.map(p => `<option value="${p}"${p === currentPhase ? " selected" : ""}>${p}</option>`).join("");
+    sel.style.display = phases.length > 1 ? "" : "none";
+  } catch {}
+}
+
+async function _loadStepForLabel(rawLabel) {
+  try {
+    const r = await fetch(`/api/trajectory/xyz?label=${encodeURIComponent(rawLabel)}`);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.xyz) {
+        const frames = splitXYZFrames(d.xyz);
+        if (frames.length) {
+          energyStepData = { label: rawLabel, steps: frames.map((_, i) => i), energies: frames.map(f => parseFrameEnergy(f)) };
+          renderStepEnergies(energyStepData);
+          return;
+        }
+      }
+    }
+    const r2 = await fetch(`/api/trajectory?label=${encodeURIComponent(rawLabel)}`);
+    if (!r2.ok) return;
+    energyStepData = await r2.json();
+    renderStepEnergies(energyStepData);
+  } catch {}
+}
 
 async function renderAllEnergies() {
   try {
@@ -2101,8 +2153,27 @@ async function renderAllEnergies() {
 }
 
 function applyEnergyPhaseFilter() {
-  if (!_allEnergiesRaw || !energyChart) return;
   const phase = document.getElementById("energy-phase-filter").value;
+
+  if (energyTabMode === "system") {
+    if (!_systemCurvesRaw || !energyChart) return;
+    const filtered = phase
+      ? _systemCurvesRaw.filter(c => (c.phase || c.label.split(" · ")[0]) === phase)
+      : _systemCurvesRaw;
+    renderSystemEnergies(filtered);
+    return;
+  }
+
+  if (energyTabMode === "step") {
+    if (!_systemCurvesRaw) return;
+    if (!phase) return; // "All phases" in step mode: no-op, keep current curve
+    const target = _systemCurvesRaw.find(c => (c.phase || c.label.split(" · ")[0]) === phase);
+    if (target && target.raw_label) _loadStepForLabel(target.raw_label);
+    return;
+  }
+
+  // "all" mode
+  if (!_allEnergiesRaw || !energyChart) return;
   const rawLabels = _allEnergiesRaw.labels || [];
   const rawEnergies = _allEnergiesRaw.energies || [];
   const filtered = rawLabels.reduce((acc, lbl, i) => {
