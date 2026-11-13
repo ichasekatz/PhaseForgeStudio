@@ -181,16 +181,29 @@ header .spacer { flex: 0 0 4px; }
   min-height: 0;
 }
 
+/* ── Column drag handles ────────────────────────────────── */
+.col-handle {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  transition: background .1s;
+  z-index: 10;
+  position: relative;
+}
+.col-handle:hover, .col-handle.rh-active { background: rgba(232,160,48,0.18); }
+
 /* ── Left: configure ────────────────────────────────────── */
 #panel-config {
   width: var(--panel);
   flex-shrink: 0;
   background: var(--bg2);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
 }
+#panel-config.collapsed { overflow: hidden; }
 .panel-title {
   font-family: var(--font);
   font-size: 11px;
@@ -358,8 +371,19 @@ select option { background: var(--bg3); }
 /* ── Right: outputs ─────────────────────────────────────── */
 #panel-out {
   width: var(--out-w); flex-shrink: 0; background: var(--bg2);
-  border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: width .15s;
 }
+
+/* ── Edge expand buttons ────────────────────────────────── */
+.panel-edge-btn {
+  position: fixed; top: 50%; z-index: 300;
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text2); cursor: pointer; padding: 10px 5px;
+  font-size: 11px; line-height: 1; transform: translateY(-50%);
+}
+#edge-cfg { left: 0; border-left: none; border-radius: 0 5px 5px 0; }
+#edge-out  { right: 0; border-right: none; border-radius: 5px 0 0 5px; }
 #tdb-preview {
   background: var(--bg3); border-top: 1px solid var(--border);
   max-height: 200px; overflow-y: auto; padding: 8px 10px;
@@ -541,12 +565,19 @@ select option { background: var(--bg3); }
 
 </div>
 
+<!-- Edge expand buttons (shown when panel collapsed) -->
+<button id="edge-cfg" class="panel-edge-btn" hidden onclick="collapseMfPanel('config')" title="Expand">▶</button>
+<button id="edge-out"  class="panel-edge-btn" hidden onclick="collapseMfPanel('out')"    title="Expand">◀</button>
+
 <!-- ── Three panels ──────────────────────────────────────── -->
 <div class="panels" id="pf-panels">
 
   <!-- ── Config panel ───────────────────────────────────── -->
   <div id="panel-config">
-    <div class="panel-title">Configure</div>
+    <div class="panel-title" style="display:flex;align-items:center;">
+      <span style="flex:1">Configure</span>
+      <button onclick="collapseMfPanel('config')" id="btn-collapse-cfg" title="Collapse" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;padding:0 4px;line-height:1;">◀</button>
+    </div>
 
     <div class="section">
       <div class="section-label">Species</div>
@@ -690,6 +721,9 @@ select option { background: var(--bg3); }
     </div>
   </div>
 
+  <!-- drag handle between config and viz -->
+  <div class="col-handle" id="handle-cfg-viz"></div>
+
   <!-- ── Viz panel ──────────────────────────────────────── -->
   <div id="panel-viz">
     <div class="viz-tabs">
@@ -792,9 +826,13 @@ select option { background: var(--bg3); }
     </div>
   </div>
 
+  <!-- drag handle between viz and out -->
+  <div class="col-handle" id="handle-viz-out"></div>
+
   <!-- ── Files panel ───────────────────────────────────── -->
   <div id="panel-out">
     <div class="panel-title" style="display:flex;align-items:center;gap:6px;">
+      <button onclick="collapseMfPanel('out')" id="btn-collapse-out" title="Collapse" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;padding:0 4px 0 0;line-height:1;">▶</button>
       <span style="flex:1">Files</span>
       <button class="btn" style="padding:2px 7px;font-size:10px;" onclick="browseLatest()" title="Jump to latest structure">Latest ↗</button>
       <button class="btn" style="padding:2px 7px;font-size:10px;" onclick="browseRefresh()">↻</button>
@@ -2696,6 +2734,85 @@ function renderAnalysisResult(data, info) {
     chartCanvas.style.display = "none";
   }
 }
+
+// ── Panel resize + collapse (MF / BLADE workspaces) ────────────────────────
+const _mfPanelCollapsed = { config: false, out: false };
+let _mfRh = null;
+
+function collapseMfPanel(which) {
+  const r = document.documentElement;
+  _mfPanelCollapsed[which] = !_mfPanelCollapsed[which];
+  const c = _mfPanelCollapsed[which];
+  if (which === "config") {
+    const el = document.getElementById("panel-config");
+    r.style.setProperty("--panel", c ? "0px" : "280px");
+    el.classList.toggle("collapsed", c);
+    const btn = document.getElementById("btn-collapse-cfg");
+    if (btn) btn.textContent = c ? "▶" : "◀";
+    document.getElementById("edge-cfg").hidden = !c;
+  } else {
+    const el = document.getElementById("panel-out");
+    r.style.setProperty("--out-w", c ? "0px" : "320px");
+    el.classList.toggle("collapsed", c);
+    const btn = document.getElementById("btn-collapse-out");
+    if (btn) btn.textContent = c ? "◀" : "▶";
+    document.getElementById("edge-out").hidden = !c;
+  }
+}
+
+document.addEventListener("mousemove", e => {
+  if (!_mfRh) return;
+  const { type, startX, startVal } = _mfRh;
+  const r = document.documentElement;
+  if (type === "cfg") {
+    const w = Math.max(120, Math.min(500, startVal + (e.clientX - startX)));
+    r.style.setProperty("--panel", w + "px");
+    _mfPanelCollapsed.config = false;
+    document.getElementById("panel-config").classList.remove("collapsed");
+    document.getElementById("edge-cfg").hidden = true;
+    const btn = document.getElementById("btn-collapse-cfg");
+    if (btn) btn.textContent = "◀";
+  } else if (type === "out") {
+    const w = Math.max(120, Math.min(600, startVal - (e.clientX - startX)));
+    r.style.setProperty("--out-w", w + "px");
+    _mfPanelCollapsed.out = false;
+    document.getElementById("panel-out").classList.remove("collapsed");
+    document.getElementById("edge-out").hidden = true;
+    const btn = document.getElementById("btn-collapse-out");
+    if (btn) btn.textContent = "▶";
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  if (!_mfRh) return;
+  if (_mfRh.handle) _mfRh.handle.classList.remove("rh-active");
+  _mfRh = null;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+});
+
+function _initMfHandles() {
+  const cfgH = document.getElementById("handle-cfg-viz");
+  if (cfgH) cfgH.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel")) || 280;
+    _mfRh = { type: "cfg", startX: e.clientX, startVal: w, handle: cfgH };
+    cfgH.classList.add("rh-active");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+  const outH = document.getElementById("handle-viz-out");
+  if (outH) outH.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--out-w")) || 320;
+    _mfRh = { type: "out", startX: e.clientX, startVal: w, handle: outH };
+    outH.classList.add("rh-active");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+}
+
+document.addEventListener("DOMContentLoaded", _initMfHandles);
 
 </script>
 </body>
