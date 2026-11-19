@@ -1841,6 +1841,219 @@ class StudioHandler(BaseHTTPRequestHandler):
             except OSError as exc:
                 self._json({"error": str(exc)}, 500)
 
+        # ------------------------------------------------------------------ #
+        # Stage 3 — new MF tool exposure                                      #
+        # ------------------------------------------------------------------ #
+
+        elif path == "/api/mf_sqsgen":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            composition_dict: dict[str, float] = body.get("composition", {})
+            if not composition_dict:
+                self._json({"error": "composition dict required, e.g. {\"Al\": 0.5, \"Ni\": 0.5}"}, 400)
+                return
+            crystal_structure: str = body.get("crystal_structure", "fcc")
+            supercell_size: list[int] = body.get("supercell_size", [2, 2, 2])
+            cutoff_distance: float = float(body.get("cutoff_distance", 6.0))
+            n_structures: int = int(body.get("n_structures", 1))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from pymatgen.core import Composition as PmgComposition
+                from materialsframework.tools.sqsgen import SqsGenerator
+                comp = PmgComposition(composition_dict)
+                gen = SqsGenerator(
+                    composition=comp,
+                    crystal_structure=crystal_structure,
+                    supercell_size=tuple(supercell_size),
+                    cutoff_distance=cutoff_distance,
+                    n_structures=n_structures,
+                )
+                result = gen.generate()
+                struct = result.get("structure")
+                struct_dict = struct.as_dict() if struct and hasattr(struct, "as_dict") else {}
+                self._json({
+                    "ok": True,
+                    "objective": float(result.get("objective", 0.0)),
+                    "structure": struct_dict,
+                })
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_stability_map":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            elements: list[str] = body.get("elements", [])
+            if len(elements) < 2:
+                self._json({"error": "elements list with at least 2 elements required"}, 400)
+                return
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            step: float = float(body.get("step", 0.1))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.stability_map import StabilityMap
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                sm = StabilityMap(calculator=calculator, elements=elements, step=step)
+                sm.fit()
+                self._json({"ok": True, "elements": elements, "step": step})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_cluster_expansion":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            structures_paths: list[str] = body.get("structures", [])
+            energies: list[float] = body.get("energies", [])
+            if not structures_paths or not energies:
+                self._json({"error": "structures (list of rel paths) and energies (list of eV values) required"}, 400)
+                return
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            try:
+                import sys
+                from ase.io import read as ase_read
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.cluster_expansion import ClusterExpansion
+                path1 = Path(_cfg["path1"]).expanduser().resolve()
+                structures = [ase_read(str(path1 / p)) for p in structures_paths]
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                ce = ClusterExpansion(calculator=calculator, structures=structures, energies=energies)
+                result = ce.fit()
+                import numpy as np
+                serialisable = {k: (v.tolist() if hasattr(v, "tolist") else float(v) if isinstance(v, (int, float, np.floating)) else str(v)) for k, v in (result or {}).items()}
+                self._json({"ok": True, **serialisable})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_bond_lattice_parameter":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            elements: list[str] = body.get("elements", [])
+            lattice_parameters: dict[str, float] = body.get("lattice_parameters", {})
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            if not elements:
+                self._json({"error": "elements list required"}, 400)
+                return
+            try:
+                import sys
+                import numpy as np
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.bond_lattice_parameter import BondLatticeParameter
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                blp = BondLatticeParameter(calculator=calculator, elements=elements, lattice_parameters=lattice_parameters or None)
+                result = blp.fit() if hasattr(blp, "fit") else {}
+                serialisable = {k: (v.tolist() if hasattr(v, "tolist") else float(v) if isinstance(v, (int, float, np.floating)) else str(v)) for k, v in (result or {}).items()}
+                self._json({"ok": True, **serialisable})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_cahn_hilliard":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            nx: int = int(body.get("nx", 64))
+            ny: int = int(body.get("ny", 64))
+            dx: float = float(body.get("dx", 1.0))
+            dy: float = float(body.get("dy", 1.0))
+            dt: float = float(body.get("dt", 0.01))
+            n_steps: int = int(body.get("n_steps", 1000))
+            kappa: float = float(body.get("kappa", 0.5))
+            a: float = float(body.get("a", 1.0))
+            mobility: float = float(body.get("mobility", 1.0))
+            c0: float = float(body.get("c0", 0.5))
+            noise: float = float(body.get("noise", 0.01))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.tools.cahn_hilliard import MaterialParameters, PhaseFieldModel, SimulationGrid
+                grid = SimulationGrid(nx=nx, ny=ny, dx=dx, dy=dy)
+                mat = MaterialParameters(kappa=kappa, a=a, mobility=mobility, c0=c0, noise=noise)
+                model = PhaseFieldModel(grid=grid, material=mat, dt=dt)
+                model.run_simulation(plot=False)
+                # Return final composition field stats
+                import numpy as np
+                phi = model.phi if hasattr(model, "phi") else None
+                result: dict[str, Any] = {
+                    "ok": True,
+                    "n_steps": n_steps,
+                    "nx": nx,
+                    "ny": ny,
+                }
+                if phi is not None:
+                    result["phi_mean"] = float(np.mean(phi))
+                    result["phi_std"] = float(np.std(phi))
+                    result["phi_min"] = float(np.min(phi))
+                    result["phi_max"] = float(np.max(phi))
+                self._json(result)
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())

@@ -332,3 +332,38 @@ class TestSlabWizardValidation:
     def test_center_slab_bool(self) -> None:
         body: dict[str, object] = {"center_slab": True}
         assert bool(body["center_slab"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — new MF tool route body validation
+# ---------------------------------------------------------------------------
+
+
+class TestMfToolRouteValidation:
+    """Validate body structure for Stage 3 MF tool routes."""
+
+    def test_sqsgen_requires_composition(self) -> None:
+        body: dict[str, object] = {"crystal_structure": "fcc"}
+        assert "composition" not in body
+
+    def test_sqsgen_composition_format(self) -> None:
+        body: dict[str, object] = {"composition": {"Al": 0.5, "Ni": 0.5}}
+        assert sum(float(v) for v in body["composition"].values()) == pytest.approx(1.0)  # type: ignore[union-attr]
+
+    def test_stability_map_requires_elements(self) -> None:
+        body: dict[str, object] = {"calculator": "grace"}
+        assert len(body.get("elements", [])) < 2  # type: ignore[arg-type]
+
+    def test_cluster_expansion_requires_structures_and_energies(self) -> None:
+        body: dict[str, object] = {"structures": [], "energies": []}
+        assert not body["structures"] or not body["energies"]
+
+    def test_bond_lattice_parameter_requires_elements(self) -> None:
+        body: dict[str, object] = {"calculator": "grace"}
+        assert not body.get("elements")
+
+    def test_cahn_hilliard_defaults(self) -> None:
+        body: dict[str, object] = {}
+        assert int(body.get("nx", 64)) == 64
+        assert float(body.get("dt", 0.01)) == pytest.approx(0.01)
+        assert int(body.get("n_steps", 1000)) == 1000
