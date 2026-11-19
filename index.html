@@ -1005,8 +1005,12 @@ select option { background: var(--bg3); }
       <button class="btn bm-view-btn active" id="bm-view-grid" onclick="bmSetView('grid')">Grid</button>
       <button class="btn bm-view-btn" id="bm-view-individual" onclick="bmSetView('individual')">Individual</button>
       <button class="btn bm-view-btn" id="bm-view-overlay" onclick="bmSetView('overlay')">Overlay</button>
+      <button class="btn bm-view-btn" id="bm-view-rankings" onclick="bmSetView('rankings')">Rankings</button>
+      <button class="btn bm-view-btn" id="bm-view-stats" onclick="bmSetView('stats')">Stats</button>
+      <button class="btn bm-view-btn" id="bm-view-gibbs" onclick="bmSetView('gibbs')">Gibbs</button>
       <div style="flex:1;"></div>
       <span id="bm-overall-state" style="font-size:11px;font-family:monospace;color:var(--text2);"></span>
+      <button class="btn" id="bm-csv-btn" onclick="bmExportCsv()" style="display:none;" title="Export CSV">⬇ CSV</button>
       <button class="btn" id="bm-report-btn" onclick="bmDownloadReport()" style="display:none;" title="Download text report">⬇ Report</button>
       <button class="btn" id="bm-export-btn" onclick="bmExportJson()" style="display:none;" title="Export JSON">⬇ JSON</button>
     </div>
@@ -1020,6 +1024,72 @@ select option { background: var(--bg3); }
       <div id="bm-empty-msg" style="color:var(--text2);font-size:13px;text-align:center;padding:40px;">
         Configure a benchmark and click Run to begin.
       </div>
+    </div>
+
+    <!-- Rankings view -->
+    <div id="bm-ranking-area" style="display:none;flex:1;overflow:auto;padding:12px;flex-direction:column;gap:12px;">
+      <!-- Weight controls -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:8px;">Ranking Weights (drag to adjust)</div>
+        <div id="bm-weight-controls" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+        <button class="btn" onclick="bmRecomputeRanking()" style="margin-top:8px;font-size:11px;">↻ Recompute</button>
+      </div>
+      <!-- Pareto canvas -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:6px;">Pareto Front: Accuracy vs Runtime</div>
+        <canvas id="bm-pareto-canvas" style="width:100%;max-width:500px;height:220px;display:block;"></canvas>
+      </div>
+      <!-- Ranking table -->
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:6px;">Model Ranking</div>
+        <table id="bm-ranking-table" style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace;"></table>
+      </div>
+    </div>
+
+    <!-- Stats view -->
+    <div id="bm-stats-area" style="display:none;flex:1;overflow:auto;padding:12px;flex-direction:column;gap:12px;">
+      <!-- Bootstrap CI panel -->
+      <div id="bm-bootstrap-panel" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:6px;">Bootstrap Confidence Intervals (95%)</div>
+        <div id="bm-bootstrap-content" style="font-size:11px;font-family:monospace;"></div>
+      </div>
+      <!-- Per-composition error -->
+      <div id="bm-per-comp-panel" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:6px;">Energy Error vs Composition</div>
+        <div id="bm-per-comp-content" style="font-size:11px;"></div>
+      </div>
+      <!-- Outlier panel -->
+      <div id="bm-outlier-panel" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;">
+        <div style="font-weight:600;font-size:11px;color:var(--text2);margin-bottom:6px;">Outlier Structures</div>
+        <div id="bm-outlier-content" style="font-size:11px;font-family:monospace;"></div>
+      </div>
+    </div>
+
+    <!-- Gibbs curves view -->
+    <div id="bm-gibbs-area" style="display:none;flex:1;overflow:auto;padding:12px;flex-direction:column;gap:12px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0;">
+        <label style="font-size:11px;color:var(--text2);">MLIP:</label>
+        <select id="bm-gibbs-mlip-select" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:3px 6px;font-size:11px;" onchange="bmRenderGibbs()"></select>
+        <label style="font-size:11px;color:var(--text2);">Temperature:</label>
+        <select id="bm-gibbs-temp-select" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:3px 6px;font-size:11px;" onchange="bmRenderGibbs()"></select>
+        <label style="font-size:11px;color:var(--text2);">
+          <input type="checkbox" id="bm-gibbs-hull" checked onchange="bmRenderGibbs()"> Hull
+        </label>
+        <label style="font-size:11px;color:var(--text2);">
+          <input type="checkbox" id="bm-gibbs-spinodal" checked onchange="bmRenderGibbs()"> Spinodal
+        </label>
+        <label style="font-size:11px;color:var(--text2);">
+          <input type="checkbox" id="bm-gibbs-binodal" checked onchange="bmRenderGibbs()"> Binodal
+        </label>
+      </div>
+      <canvas id="bm-gibbs-canvas" style="width:100%;max-width:700px;height:320px;display:block;border:1px solid var(--border);border-radius:var(--radius);"></canvas>
+      <div id="bm-gibbs-legend" style="font-size:10px;color:var(--text2);font-family:monospace;"></div>
+    </div>
+
+    <!-- Confusion matrix section -->
+    <div id="bm-confusion-section" style="display:none;border-top:1px solid var(--border);max-height:200px;overflow-y:auto;flex-shrink:0;">
+      <div style="padding:6px 12px;font-weight:600;font-size:0.85em;color:var(--text2);">Phase Confusion Matrix</div>
+      <div id="bm-confusion-content" style="padding:4px 12px;font-size:11px;font-family:monospace;overflow-x:auto;"></div>
     </div>
 
     <!-- Metrics table -->
@@ -4436,6 +4506,11 @@ async function bmExportJson() {
   window.open(`/api/benchmark/export_json/${_bmActiveBenchmarkId}`, "_blank");
 }
 
+async function bmExportCsv() {
+  if (!_bmActiveBenchmarkId) return;
+  window.open(`/api/benchmark/csv/${_bmActiveBenchmarkId}`, "_blank");
+}
+
 async function bmCancel() {
   if (!_bmActiveBenchmarkId) return;
   await fetch(`/api/benchmark/cancel/${_bmActiveBenchmarkId}`, { method: "POST" });
@@ -4474,12 +4549,20 @@ function bmApplyStatus(data) {
   if (data.mlip_jobs) {
     bmRenderPhaseGrid(data);
     bmRenderMetricsTable(data);
+    bmRenderConfusionMatrix(data);
   }
   const done = data.state === "done" || data.state === "error";
-  const repBtn = document.getElementById("bm-report-btn");
-  const expBtn = document.getElementById("bm-export-btn");
-  if (repBtn) repBtn.style.display = done ? "" : "none";
-  if (expBtn) expBtn.style.display = done ? "" : "none";
+  document.getElementById("bm-csv-btn").style.display = done ? "" : "none";
+  document.getElementById("bm-report-btn").style.display = done ? "" : "none";
+  document.getElementById("bm-export-btn").style.display = done ? "" : "none";
+  if (done) {
+    bmRenderRanking(data);
+    bmRenderStats(data);
+    bmPopulateGibbsSelects(data);
+    if (_bmViewMode === "rankings") bmRenderRanking(data);
+    if (_bmViewMode === "stats") bmRenderStats(data);
+    if (_bmViewMode === "gibbs") bmRenderGibbs();
+  }
 }
 
 function _bmStateColor(state) {
@@ -4584,7 +4667,472 @@ function bmSetView(mode) {
   document.querySelectorAll(".bm-view-btn").forEach(b => b.classList.remove("active"));
   const btn = document.getElementById(`bm-view-${mode}`);
   if (btn) btn.classList.add("active");
-  if (_bmLastStatus) bmRenderPhaseGrid(_bmLastStatus);
+  // Show/hide main areas
+  const diagramViews = ["grid", "individual", "overlay"];
+  document.getElementById("bm-diagram-area").style.display = diagramViews.includes(mode) ? "" : "none";
+  document.getElementById("bm-ranking-area").style.display = mode === "rankings" ? "flex" : "none";
+  document.getElementById("bm-stats-area").style.display = mode === "stats" ? "flex" : "none";
+  document.getElementById("bm-gibbs-area").style.display = mode === "gibbs" ? "flex" : "none";
+  if (_bmLastStatus) {
+    if (diagramViews.includes(mode)) bmRenderPhaseGrid(_bmLastStatus);
+    else if (mode === "rankings") bmRenderRanking(_bmLastStatus);
+    else if (mode === "stats") bmRenderStats(_bmLastStatus);
+    else if (mode === "gibbs") { bmPopulateGibbsSelects(_bmLastStatus); bmRenderGibbs(); }
+  }
+}
+
+// ── Default ranking weights ──────────────────────────────────────────────────
+let _bmWeights = { energy_mae: 1.0, force_mae: 0.5, f1: 1.5, mad_t: 1.0, runtime_s: 0.3 };
+
+function bmInitWeightControls() {
+  const el = document.getElementById("bm-weight-controls");
+  if (!el) return;
+  const labels = { energy_mae: "Energy MAE", force_mae: "Force MAE", f1: "F1 Score", mad_t: "MAD-T", runtime_s: "Runtime" };
+  el.innerHTML = Object.entries(_bmWeights).map(([k, v]) => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:80px;">
+      <span style="font-size:10px;color:var(--text2);">${labels[k]}</span>
+      <input type="range" min="0" max="3" step="0.1" value="${v}"
+        oninput="this.nextElementSibling.textContent=parseFloat(this.value).toFixed(1);_bmWeights['${k}']=parseFloat(this.value);"
+        style="width:80px;accent-color:var(--accent);">
+      <span style="font-size:10px;font-family:monospace;">${v.toFixed(1)}</span>
+    </div>`).join("");
+}
+
+function bmRecomputeRanking() {
+  if (_bmLastStatus) bmRenderRanking(_bmLastStatus);
+}
+
+function bmRenderRanking(data) {
+  const area = document.getElementById("bm-ranking-area");
+  if (!area) return;
+  bmInitWeightControls();
+
+  // Build per-MLIP metric table from available data
+  const jobs = data.mlip_jobs || {};
+  const energy = data.energy_result?.mlips || {};
+  const ranking = data.ranking || null;
+
+  // Collect metrics per MLIP
+  const perMlip = {};
+  for (const [mlip, job] of Object.entries(jobs)) {
+    const m = job.metrics || {};
+    const cls = m.available ? (m.classification || {}) : {};
+    const bnd = m.available ? (m.boundary || {}) : {};
+    const em = energy[mlip] || {};
+    perMlip[mlip] = {
+      energy_mae: em.energy_mae ?? null,
+      force_mae: em.force_mae ?? null,
+      f1: cls.f1 ?? null,
+      mad_t: bnd.mad_t ?? null,
+      runtime_s: job.elapsed_s ?? null,
+      state: job.state,
+    };
+  }
+
+  // Use server ranking if available, otherwise compute locally
+  let ranked = ranking;
+  if (!ranked || !ranked.length) {
+    ranked = _bmLocalRank(perMlip, _bmWeights);
+  }
+
+  // Pareto canvas
+  _bmDrawPareto(perMlip, ranked);
+
+  // Ranking table
+  const tbl = document.getElementById("bm-ranking-table");
+  if (!tbl) return;
+  const hdr = ["#", "MLIP", "Energy MAE", "Force MAE", "F1", "MAD-T (K)", "Runtime (s)", "Score", "Pareto"];
+  tbl.innerHTML = `<thead><tr>${hdr.map(h => `<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:left;color:var(--text2);">${h}</th>`).join("")}</tr></thead>
+    <tbody>${ranked.map((r, i) => {
+      const m = perMlip[r.mlip] || {};
+      const fmt = v => v != null ? v.toFixed(4) : "—";
+      const pareto = r.pareto ? `<span style="color:var(--green);font-weight:600;">★</span>` : "";
+      return `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;color:var(--text2);">${i + 1}</td>
+        <td style="padding:3px 8px;font-weight:600;">${r.mlip}</td>
+        <td style="padding:3px 8px;">${fmt(m.energy_mae)}</td>
+        <td style="padding:3px 8px;">${fmt(m.force_mae)}</td>
+        <td style="padding:3px 8px;">${fmt(m.f1)}</td>
+        <td style="padding:3px 8px;">${fmt(m.mad_t)}</td>
+        <td style="padding:3px 8px;">${fmt(m.runtime_s)}</td>
+        <td style="padding:3px 8px;font-weight:600;">${r.composite_score != null ? r.composite_score.toFixed(3) : "—"}</td>
+        <td style="padding:3px 8px;text-align:center;">${pareto}</td>
+      </tr>`;
+    }).join("")}</tbody>`;
+}
+
+function _bmLocalRank(perMlip, weights) {
+  // Normalize each metric to [0,1] across MLIPs, then compute weighted score
+  const lowerBetter = { energy_mae: true, force_mae: true, mad_t: true, runtime_s: true };
+  const higherBetter = { f1: true };
+  const allMetrics = Object.keys(weights);
+
+  // Collect finite values per metric
+  const vals = {};
+  for (const k of allMetrics) vals[k] = Object.values(perMlip).map(m => m[k]).filter(v => v != null && isFinite(v));
+
+  const minV = {}, maxV = {};
+  for (const k of allMetrics) {
+    minV[k] = vals[k].length ? Math.min(...vals[k]) : 0;
+    maxV[k] = vals[k].length ? Math.max(...vals[k]) : 1;
+  }
+
+  const scores = Object.entries(perMlip).map(([mlip, m]) => {
+    let totalW = 0, totalS = 0;
+    for (const [k, w] of Object.entries(weights)) {
+      if (w === 0 || m[k] == null) continue;
+      const range = maxV[k] - minV[k] || 1;
+      let norm = (m[k] - minV[k]) / range; // 0 = min, 1 = max
+      if (lowerBetter[k]) norm = 1 - norm;  // flip: 0=worst, 1=best
+      totalS += w * norm;
+      totalW += w;
+    }
+    return { mlip, composite_score: totalW > 0 ? totalS / totalW : null };
+  });
+  scores.sort((a, b) => (b.composite_score ?? -1) - (a.composite_score ?? -1));
+
+  // Pareto front: find non-dominated points (accuracy proxy = f1 or 1-energy_mae_norm, speed = 1/runtime)
+  const paretoSet = _bmFindPareto(perMlip);
+  return scores.map((r, i) => ({ ...r, rank: i + 1, pareto: paretoSet.has(r.mlip) }));
+}
+
+function _bmFindPareto(perMlip) {
+  // Objectives: maximize f1 (or minimize energy_mae) AND minimize runtime_s
+  // A point A dominates B if A is better-or-equal on all, strictly better on at least one
+  const pts = Object.entries(perMlip).map(([mlip, m]) => ({
+    mlip,
+    acc: m.f1 ?? (m.energy_mae != null ? Math.max(0, 1 - m.energy_mae) : null),
+    speed: m.runtime_s != null ? 1 / (m.runtime_s + 1) : null,
+  })).filter(p => p.acc != null && p.speed != null);
+
+  const pareto = new Set();
+  for (const p of pts) {
+    let dominated = false;
+    for (const q of pts) {
+      if (q === p) continue;
+      if (q.acc >= p.acc && q.speed >= p.speed && (q.acc > p.acc || q.speed > p.speed)) {
+        dominated = true; break;
+      }
+    }
+    if (!dominated) pareto.add(p.mlip);
+  }
+  if (!pareto.size && pts.length) pareto.add(pts[0].mlip); // fallback
+  return pareto;
+}
+
+function _bmDrawPareto(perMlip, ranked) {
+  const canvas = document.getElementById("bm-pareto-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const W = canvas.clientWidth || 400;
+  const H = canvas.clientHeight || 220;
+  canvas.width = W;
+  canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const pts = Object.entries(perMlip).map(([mlip, m]) => ({
+    mlip,
+    x: m.runtime_s ?? null,  // x = runtime (lower is better → right edge is worse)
+    y: m.f1 ?? (m.energy_mae != null ? Math.max(0, 1 - m.energy_mae * 10) : null),
+    pareto: ranked.find(r => r.mlip === mlip)?.pareto || false,
+  })).filter(p => p.x != null && p.y != null);
+
+  if (!pts.length) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text2") || "#888";
+    ctx.font = "12px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("No runtime/accuracy data yet", W/2, H/2);
+    return;
+  }
+
+  const pad = { left: 50, right: 20, top: 20, bottom: 40 };
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs) || 1;
+  const yMin = Math.min(...ys), yMax = Math.max(...ys) || 1;
+  const toCanvasX = x => pad.left + (x - xMin) / (xMax - xMin + 1e-9) * (W - pad.left - pad.right);
+  const toCanvasY = y => H - pad.bottom - (y - yMin) / (yMax - yMin + 1e-9) * (H - pad.top - pad.bottom);
+
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent") || "#4a9eff";
+  const green = getComputedStyle(document.documentElement).getPropertyValue("--green") || "#4caf50";
+  const text2 = getComputedStyle(document.documentElement).getPropertyValue("--text2") || "#888";
+
+  // Draw axes
+  ctx.strokeStyle = text2; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, H - pad.bottom); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad.left, H - pad.bottom); ctx.lineTo(W - pad.right, H - pad.bottom); ctx.stroke();
+  ctx.fillStyle = text2; ctx.font = "10px monospace"; ctx.textAlign = "center";
+  ctx.fillText("Runtime (s)", W/2, H - 5);
+  ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText("Accuracy (F1)", 0, 0); ctx.restore();
+
+  // Draw Pareto front line
+  const pFront = pts.filter(p => p.pareto).sort((a,b) => a.x - b.x);
+  if (pFront.length >= 2) {
+    ctx.strokeStyle = green; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+    ctx.beginPath(); pFront.forEach((p,i) => i === 0 ? ctx.moveTo(toCanvasX(p.x), toCanvasY(p.y)) : ctx.lineTo(toCanvasX(p.x), toCanvasY(p.y)));
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Draw points
+  for (const p of pts) {
+    const cx = toCanvasX(p.x), cy = toCanvasY(p.y);
+    ctx.fillStyle = p.pareto ? green : accent;
+    ctx.beginPath(); ctx.arc(cx, cy, p.pareto ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = text2; ctx.font = "9px monospace"; ctx.textAlign = "left";
+    ctx.fillText(p.mlip, cx + 7, cy + 3);
+  }
+}
+
+// ── Stats view ───────────────────────────────────────────────────────────────
+
+function bmRenderStats(data) {
+  _bmRenderBootstrapCIs(data);
+  _bmRenderPerComposition(data);
+  _bmRenderOutliers(data);
+}
+
+function _bmRenderBootstrapCIs(data) {
+  const el = document.getElementById("bm-bootstrap-content");
+  if (!el) return;
+  const energy = data.energy_result;
+  if (!energy?.available || !energy.mlips) {
+    el.innerHTML = '<span style="color:var(--text2);">No energy benchmark data.</span>';
+    return;
+  }
+  const stats = data.energy_stats;  // populated by backend if available
+  let html = "";
+  for (const [mlip, em] of Object.entries(energy.mlips)) {
+    html += `<div style="margin-bottom:8px;"><span style="font-weight:600;">${mlip}</span><br>`;
+    if (stats?.[mlip]?.energy_mae_ci) {
+      const ci = stats[mlip].energy_mae_ci;
+      html += `  Energy MAE: ${(ci.mean*1000).toFixed(2)} ± [${(ci.ci_lower*1000).toFixed(2)}, ${(ci.ci_upper*1000).toFixed(2)}] meV/atom (n_eff=${ci.n_effective})<br>`;
+    } else if (em.energy_mae != null) {
+      html += `  Energy MAE: ${(em.energy_mae*1000).toFixed(2)} meV/atom (n=${em.n_evaluated ?? "?"})<br>`;
+    }
+    if (stats?.[mlip]?.formation_mae_ci) {
+      const ci = stats[mlip].formation_mae_ci;
+      html += `  Formation MAE: ${(ci.mean*1000).toFixed(2)} ± [${(ci.ci_lower*1000).toFixed(2)}, ${(ci.ci_upper*1000).toFixed(2)}] meV/atom<br>`;
+    }
+    html += "</div>";
+  }
+  el.innerHTML = html || '<span style="color:var(--text2);">No data.</span>';
+}
+
+function _bmRenderPerComposition(data) {
+  const el = document.getElementById("bm-per-comp-content");
+  if (!el) return;
+  const energy = data.energy_result;
+  if (!energy?.available || !energy.mlips) {
+    el.innerHTML = '<span style="color:var(--text2);">No energy benchmark data for composition analysis.</span>';
+    return;
+  }
+  // Render bar chart from per_composition data if available
+  let html = "";
+  for (const [mlip, em] of Object.entries(energy.mlips)) {
+    const pc = em.per_composition;
+    if (!pc || !pc.length) continue;
+    html += `<div style="margin-bottom:10px;"><span style="font-weight:600;">${mlip}</span><div style="display:flex;align-items:flex-end;gap:2px;height:60px;margin-top:4px;">`;
+    const maxErr = Math.max(...pc.map(p => p.energy_mae || 0), 1e-9);
+    html += pc.map(p => {
+      const h = Math.round((p.energy_mae || 0) / maxErr * 56);
+      const label = p.x != null ? p.x.toFixed(2) : "?";
+      return `<div title="x=${label}, MAE=${(p.energy_mae||0).toFixed(4)}" style="flex:1;background:var(--accent);height:${h}px;min-width:4px;border-radius:2px 2px 0 0;"></div>`;
+    }).join("");
+    html += `</div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);"><span>x=0</span><span>x=1</span></div></div>`;
+  }
+  el.innerHTML = html || '<span style="color:var(--text2);">No per-composition data (run energy mode).</span>';
+}
+
+function _bmRenderOutliers(data) {
+  const el = document.getElementById("bm-outlier-content");
+  if (!el) return;
+  const energy = data.energy_result;
+  if (!energy?.available || !energy.mlips) {
+    el.innerHTML = '<span style="color:var(--text2);">No energy data for outlier analysis.</span>';
+    return;
+  }
+  const stats = data.energy_stats;
+  let html = "";
+  for (const [mlip, em] of Object.entries(energy.mlips)) {
+    const outliers = stats?.[mlip]?.outliers || em.outlier_structures;
+    if (outliers?.outlier_values?.length) {
+      html += `<div style="margin-bottom:6px;"><span style="font-weight:600;">${mlip}</span> — ${outliers.outlier_values.length} outlier(s):<br>`;
+      outliers.outlier_indices?.slice(0, 5).forEach((idx, i) => {
+        html += `  idx=${idx}  err=${outliers.outlier_values?.[i]?.toFixed(4) ?? "?"}  z=${outliers.z_scores?.[idx]?.toFixed(1) ?? "?"}σ<br>`;
+      });
+      html += "</div>";
+    }
+  }
+  el.innerHTML = html || '<span style="color:var(--text2);">No outliers detected (or energy mode not run).</span>';
+}
+
+// ── Confusion matrix ─────────────────────────────────────────────────────────
+
+function bmRenderConfusionMatrix(data) {
+  const sec = document.getElementById("bm-confusion-section");
+  const el = document.getElementById("bm-confusion-content");
+  if (!sec || !el) return;
+  let anyMatrix = false;
+  let html = "";
+  for (const [mlip, job] of Object.entries(data.mlip_jobs || {})) {
+    const cm = job.metrics?.confusion_matrix;
+    if (!cm?.available || !cm.classes?.length) continue;
+    anyMatrix = true;
+    html += `<div style="margin-bottom:10px;"><strong>${mlip}</strong><table style="border-collapse:collapse;margin-top:4px;font-size:10px;">`;
+    html += `<tr><th></th>${cm.classes.map(c => `<th style="padding:2px 6px;color:var(--text2);">${c}</th>`).join("")}</tr>`;
+    cm.matrix.forEach((row, i) => {
+      html += `<tr><th style="padding:2px 6px;color:var(--text2);text-align:right;">${cm.classes[i]}</th>`;
+      row.forEach((v, j) => {
+        const bg = i === j ? "var(--accent)" : v > 0 ? "var(--red)" : "";
+        const alpha = i === j ? Math.min(0.9, v / Math.max(1, ...row)) : 0.5;
+        html += `<td style="padding:2px 6px;text-align:center;${bg ? `background:${bg};opacity:${alpha};` : ""}">${v}</td>`;
+      });
+      html += "</tr>";
+    });
+    html += "</table></div>";
+  }
+  if (anyMatrix) { sec.style.display = ""; el.innerHTML = html; }
+}
+
+// ── Gibbs curves ─────────────────────────────────────────────────────────────
+
+function bmPopulateGibbsSelects(data) {
+  const mlipSel = document.getElementById("bm-gibbs-mlip-select");
+  const tempSel = document.getElementById("bm-gibbs-temp-select");
+  if (!mlipSel || !tempSel) return;
+  const stability = data.stability_result;
+  if (!stability?.available || !stability.mlips) return;
+
+  const mlips = Object.keys(stability.mlips);
+  mlipSel.innerHTML = mlips.map(m => `<option value="${m}">${m}</option>`).join("");
+
+  const firstMlip = mlips[0];
+  const curves = stability.mlips[firstMlip]?.gibbs_curves || {};
+  const temps = Object.keys(curves).sort((a,b) => parseFloat(a)-parseFloat(b));
+  tempSel.innerHTML = temps.map(t => `<option value="${t}">${t} K</option>`).join("");
+
+  mlipSel.onchange = () => {
+    const m = mlipSel.value;
+    const c = stability.mlips[m]?.gibbs_curves || {};
+    const ts = Object.keys(c).sort((a,b) => parseFloat(a)-parseFloat(b));
+    tempSel.innerHTML = ts.map(t => `<option value="${t}">${t} K</option>`).join("");
+    bmRenderGibbs();
+  };
+}
+
+function bmRenderGibbs() {
+  const canvas = document.getElementById("bm-gibbs-canvas");
+  const legend = document.getElementById("bm-gibbs-legend");
+  if (!canvas || !_bmLastStatus) return;
+  const stability = _bmLastStatus.stability_result;
+  if (!stability?.available) {
+    const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+  const mlip = document.getElementById("bm-gibbs-mlip-select")?.value;
+  const tempKey = document.getElementById("bm-gibbs-temp-select")?.value;
+  if (!mlip || !tempKey) return;
+
+  const mlipData = stability.mlips[mlip];
+  if (!mlipData?.available) return;
+
+  const curve = mlipData.gibbs_curves?.[tempKey];
+  if (!curve?.available) return;
+
+  const showHull = document.getElementById("bm-gibbs-hull")?.checked;
+  const showSpinodal = document.getElementById("bm-gibbs-spinodal")?.checked;
+  const showBinodal = document.getElementById("bm-gibbs-binodal")?.checked;
+  const hull = mlipData.hull_per_temp?.[tempKey] || mlipData.convex_hull;
+  const spin = mlipData.spinodal_per_temp?.[tempKey] || mlipData.spinodal;
+  const binodal = mlipData.binodal_per_temp?.[tempKey];
+
+  const W = canvas.clientWidth || 600, H = canvas.clientHeight || 320;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = { left: 60, right: 20, top: 20, bottom: 40 };
+  const xs = curve.x, gs = curve.G;
+  const finiteG = gs.filter(v => v != null && isFinite(v));
+  if (!finiteG.length) return;
+  const gMin = Math.min(...finiteG), gMax = Math.max(...finiteG);
+  const gRange = gMax - gMin || 1;
+
+  const toX = x => pad.left + x * (W - pad.left - pad.right);
+  const toY = g => H - pad.bottom - ((g - gMin) / gRange) * (H - pad.top - pad.bottom);
+
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent") || "#4a9eff";
+  const green = getComputedStyle(document.documentElement).getPropertyValue("--green") || "#4caf50";
+  const yellow = getComputedStyle(document.documentElement).getPropertyValue("--yellow") || "#ffc107";
+  const red = getComputedStyle(document.documentElement).getPropertyValue("--red") || "#f44336";
+  const text2 = getComputedStyle(document.documentElement).getPropertyValue("--text2") || "#888";
+
+  // Axes
+  ctx.strokeStyle = text2; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, H-pad.bottom); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad.left, H-pad.bottom); ctx.lineTo(W-pad.right, H-pad.bottom); ctx.stroke();
+  ctx.fillStyle = text2; ctx.font = "10px monospace"; ctx.textAlign = "center";
+  ctx.fillText(`X(${stability.elements?.[1] || "B"})`, W/2, H-5);
+  ctx.save(); ctx.translate(14, H/2); ctx.rotate(-Math.PI/2); ctx.fillText("G (J/mol)", 0, 0); ctx.restore();
+  // Tick labels
+  ctx.textAlign = "center";
+  [0, 0.25, 0.5, 0.75, 1.0].forEach(x => {
+    ctx.fillText(x.toFixed(2), toX(x), H-pad.bottom+12);
+  });
+  ctx.textAlign = "right";
+  const gTicks = [gMin, gMin + gRange*0.5, gMax];
+  gTicks.forEach(g => { ctx.fillText(g.toFixed(0), pad.left-4, toY(g)+3); });
+
+  // G(x) curve
+  ctx.strokeStyle = accent; ctx.lineWidth = 2;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < xs.length; i++) {
+    if (gs[i] == null || !isFinite(gs[i])) { first = true; continue; }
+    const cx = toX(xs[i]), cy = toY(gs[i]);
+    first ? (ctx.moveTo(cx, cy), first = false) : ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+
+  // Convex hull overlay
+  if (showHull && hull?.available && hull.hull_x) {
+    ctx.strokeStyle = green; ctx.lineWidth = 1.5; ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    hull.hull_x.forEach((hx, i) => {
+      const cx = toX(hx), cy = toY(hull.hull_G[i]);
+      i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Spinodal boundaries
+  if (showSpinodal && spin?.available && spin.spinodal_x) {
+    ctx.strokeStyle = yellow; ctx.lineWidth = 1.5;
+    for (const sx of spin.spinodal_x) {
+      const cx = toX(sx);
+      ctx.beginPath(); ctx.moveTo(cx, pad.top); ctx.lineTo(cx, H-pad.bottom); ctx.stroke();
+    }
+  }
+
+  // Binodal boundaries
+  if (showBinodal && binodal?.available && binodal.binodal_pairs) {
+    ctx.strokeStyle = red; ctx.lineWidth = 2;
+    for (const bp of binodal.binodal_pairs) {
+      [bp.x1, bp.x2].forEach(bx => {
+        const cx = toX(bx);
+        ctx.beginPath(); ctx.moveTo(cx, pad.top); ctx.lineTo(cx, H-pad.bottom); ctx.stroke();
+      });
+    }
+  }
+
+  // Legend
+  if (legend) {
+    let txt = `${mlip} at T=${tempKey} K`;
+    if (showHull && hull?.available) txt += "  ── hull (green)";
+    if (showSpinodal && spin?.available) txt += "  │ spinodal (yellow)";
+    if (showBinodal && binodal?.available) txt += `  │ binodal (red, ${binodal.n_miscibility_gaps || 0} gap(s))`;
+    legend.textContent = txt;
+  }
 }
 
 async function bmLoadBenchmarkList() {

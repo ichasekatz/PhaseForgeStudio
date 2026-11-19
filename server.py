@@ -134,6 +134,13 @@ from phaseforge_studio.benchmark_report import build_json_export, build_text_rep
 _pfp_job = PfpJob()
 
 
+def _fmt_or_blank(value: float | None, digits: int = 6) -> str:
+    """Format a float for CSV export, returning empty string for None."""
+    if value is None:
+        return ""
+    return f"{value:.{digits}g}"
+
+
 class _PfState:
     proc: subprocess.Popen | None = None
     state: str = "idle"  # idle | running | done | error
@@ -673,6 +680,54 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 import json as _json
                 self.wfile.write(_json.dumps(export, indent=2).encode())
+
+        elif path.startswith("/api/benchmark/csv/"):
+            bm_id = path[len("/api/benchmark/csv/"):]
+            status = get_benchmark_status(bm_id)
+            if status is None:
+                self._json({"error": "not found"}, 404)
+            else:
+                import csv as _csv
+                import io as _io
+                buf = _io.StringIO()
+                writer = _csv.writer(buf)
+                writer.writerow([
+                    "mlip", "state", "elapsed_s", "energy_mae", "energy_rmse",
+                    "force_mae", "f1", "accuracy", "precision", "recall",
+                    "jaccard", "mad_t", "rmsd_t", "n_boundaries",
+                    "composite_score", "pareto",
+                ])
+                ranking_map = {r.get("mlip", ""): r for r in (status.get("ranking") or [])}
+                for mlip, job in status.get("mlip_jobs", {}).items():
+                    m = job.get("metrics") or {}
+                    cls = m.get("classification", {}) if m.get("available") else {}
+                    bnd = m.get("boundary", {}) if m.get("available") else {}
+                    em = (status.get("energy_result") or {}).get("mlips", {}).get(mlip, {})
+                    rk = ranking_map.get(mlip, {})
+                    writer.writerow([
+                        mlip,
+                        job.get("state", ""),
+                        _fmt_or_blank(job.get("elapsed_s")),
+                        _fmt_or_blank(em.get("energy_mae")),
+                        _fmt_or_blank(em.get("energy_rmse")),
+                        _fmt_or_blank(em.get("force_mae")),
+                        _fmt_or_blank(cls.get("f1")),
+                        _fmt_or_blank(cls.get("accuracy")),
+                        _fmt_or_blank(cls.get("precision")),
+                        _fmt_or_blank(cls.get("recall")),
+                        _fmt_or_blank(cls.get("jaccard")),
+                        _fmt_or_blank(bnd.get("mad_t")),
+                        _fmt_or_blank(bnd.get("rmsd_t")),
+                        bnd.get("n_boundaries_matched", ""),
+                        _fmt_or_blank(rk.get("composite_score")),
+                        str(rk.get("pareto", False)).lower(),
+                    ])
+                csv_text = buf.getvalue()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="benchmark_{bm_id}.csv"')
+                self.end_headers()
+                self.wfile.write(csv_text.encode())
 
         elif path.startswith("/benchmark_file/"):
             # Serve files from benchmark run directories.
