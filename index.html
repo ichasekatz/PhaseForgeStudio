@@ -878,9 +878,30 @@ select option { background: var(--bg3); }
   <!-- Left config panel -->
   <div class="panel" style="width:300px;min-width:240px;max-width:380px;overflow-y:auto;flex-shrink:0;">
     <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:0.95em;">
-      MLIP Phase Diagram Benchmark
+      MLIP Benchmark
     </div>
     <div style="padding:10px 14px;">
+
+      <!-- Templates -->
+      <div style="display:flex;gap:4px;margin-bottom:8px;">
+        <select id="bm-template-select" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:11px;">
+          <option value="">— Load template —</option>
+        </select>
+        <button class="btn" onclick="bmLoadTemplate()" title="Apply template">Load</button>
+      </div>
+
+      <!-- Benchmark mode -->
+      <div class="section-label">Benchmark Mode</div>
+      <select id="bm-benchmark-mode-select" onchange="bmUpdateModeUI()"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:12px;margin-bottom:4px;">
+        <option value="phase_diagram">Phase Diagram</option>
+        <option value="energy">Energy vs DFT Reference</option>
+        <option value="stability">Phase Stability</option>
+        <option value="complete">Complete (all modes)</option>
+      </select>
+      <div id="bm-benchmark-mode-note" style="color:var(--text2);font-size:10px;margin-bottom:6px;line-height:1.4;">
+        Full PhaseForge pipeline per MLIP → TDB → pycalphad phase diagrams.
+      </div>
 
       <!-- System -->
       <div class="section-label">Elements</div>
@@ -896,18 +917,20 @@ select option { background: var(--bg3); }
         <div style="color:var(--text2);font-size:11px;">Loading…</div>
       </div>
 
-      <!-- Phases -->
-      <div class="section-label" style="margin-top:8px;">Lattices / Phases</div>
-      <div id="bm-phase-list" style="display:flex;flex-direction:column;gap:3px;"></div>
+      <!-- Phases (hidden for energy-only mode) -->
+      <div id="bm-phases-section" style="margin-top:0;">
+        <div class="section-label" style="margin-top:8px;">Lattices / Phases</div>
+        <div id="bm-phase-list" style="display:flex;flex-direction:column;gap:3px;"></div>
+      </div>
 
-      <!-- Level + Mode -->
-      <div style="display:flex;gap:8px;margin-top:8px;">
+      <!-- Level + Struct Mode (hidden for energy-only mode) -->
+      <div id="bm-sqscal-section" style="display:flex;gap:8px;margin-top:8px;">
         <div style="flex:1;">
           <div class="section-label">SQS Level</div>
           <input id="bm-level-input" type="number" value="2" min="1" max="4" style="width:100%;">
         </div>
         <div style="flex:1;">
-          <div class="section-label">Mode</div>
+          <div class="section-label">Struct Mode</div>
           <select id="bm-mode-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:12px;">
             <option value="relaxed">Relaxed (B)</option>
             <option value="fixed">Fixed (A)</option>
@@ -927,6 +950,21 @@ select option { background: var(--bg3); }
         </div>
       </div>
 
+      <!-- Energy-mode fields (structures_dir + energy_reference_path) -->
+      <div id="bm-energy-section" style="display:none;">
+        <div class="section-label" style="margin-top:8px;">Structures Directory</div>
+        <input id="bm-structures-dir-input" type="text" placeholder="/path/to/structures" style="width:100%;box-sizing:border-box;">
+        <div class="section-label" style="margin-top:6px;">DFT Reference JSON</div>
+        <input id="bm-energy-ref-input" type="text" placeholder="/path/to/reference.json" style="width:100%;box-sizing:border-box;">
+      </div>
+
+      <!-- Device -->
+      <div class="section-label" style="margin-top:8px;">Device</div>
+      <select id="bm-device-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:12px;">
+        <option value="cpu">CPU</option>
+        <option value="cuda">CUDA</option>
+      </select>
+
       <!-- Workdir -->
       <div class="section-label" style="margin-top:8px;">Workdir</div>
       <div style="display:flex;gap:4px;">
@@ -945,11 +983,6 @@ select option { background: var(--bg3); }
       <div style="display:flex;gap:6px;margin-top:12px;">
         <button class="btn btn-run" id="bm-run-btn" onclick="bmRun()" style="flex:1;">▶ Run Benchmark</button>
         <button class="btn btn-stop" id="bm-cancel-btn" onclick="bmCancel()" style="display:none;">■ Cancel</button>
-      </div>
-
-      <!-- Mode note -->
-      <div id="bm-mode-note" style="color:var(--text2);font-size:10px;margin-top:6px;line-height:1.4;">
-        Mode B: each MLIP independently relaxes the same composition grid via sqscal.
       </div>
     </div>
 
@@ -974,6 +1007,8 @@ select option { background: var(--bg3); }
       <button class="btn bm-view-btn" id="bm-view-overlay" onclick="bmSetView('overlay')">Overlay</button>
       <div style="flex:1;"></div>
       <span id="bm-overall-state" style="font-size:11px;font-family:monospace;color:var(--text2);"></span>
+      <button class="btn" id="bm-report-btn" onclick="bmDownloadReport()" style="display:none;" title="Download text report">⬇ Report</button>
+      <button class="btn" id="bm-export-btn" onclick="bmExportJson()" style="display:none;" title="Export JSON">⬇ JSON</button>
     </div>
 
     <!-- Active MLIP progress rows -->
@@ -4129,6 +4164,67 @@ async function initBenchmarkWorkspace() {
   bmRenderPhaseCheckboxes();
   bmLoadSavedConfig();
   await bmLoadBenchmarkList();
+  await bmPopulateTemplates();
+  bmUpdateModeUI();
+}
+
+function bmUpdateModeUI() {
+  const sel = document.getElementById("bm-benchmark-mode-select");
+  const mode = sel ? sel.value : "phase_diagram";
+  const notes = {
+    phase_diagram: "Full PhaseForge pipeline per MLIP → TDB → pycalphad phase diagrams.",
+    energy: "Compare MLIP energies against a DFT reference dataset. No TDB fitting.",
+    stability: "Phase stability analysis: convex hull + spinodal from TDBs.",
+    complete: "Energy + phase diagram + stability — all modes in sequence.",
+  };
+  const noteEl = document.getElementById("bm-benchmark-mode-note");
+  if (noteEl) noteEl.textContent = notes[mode] || "";
+  const needsSqscal = mode !== "energy";
+  const phaseSec = document.getElementById("bm-phases-section");
+  const sqsalSec = document.getElementById("bm-sqscal-section");
+  if (phaseSec) phaseSec.style.display = needsSqscal ? "" : "none";
+  if (sqsalSec) sqsalSec.style.display = needsSqscal ? "flex" : "none";
+  const energySec = document.getElementById("bm-energy-section");
+  if (energySec) energySec.style.display = (mode === "energy" || mode === "complete") ? "" : "none";
+}
+
+async function bmPopulateTemplates() {
+  const sel = document.getElementById("bm-template-select");
+  if (!sel) return;
+  try {
+    const resp = await fetch("/api/benchmark/templates");
+    const data = await resp.json();
+    const templates = data.templates || [];
+    templates.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.key;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+async function bmLoadTemplate() {
+  const sel = document.getElementById("bm-template-select");
+  if (!sel || !sel.value) return;
+  try {
+    const resp = await fetch(`/api/benchmark/template/${encodeURIComponent(sel.value)}`);
+    const data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    const c = data.config;
+    if (c.elements) { _bmElements = c.elements; bmRenderElementTags(); }
+    if (c.mlips) { _bmSelectedMlips = new Set(c.mlips); bmUpdateMlipCheckboxes(); }
+    if (c.phases) { _bmSelectedPhases = new Set(c.phases); bmUpdatePhaseCheckboxes(); }
+    if (c.level) { const el = document.getElementById("bm-level-input"); if (el) el.value = c.level; }
+    if (c.t_min !== undefined) { const el = document.getElementById("bm-tmin-input"); if (el) el.value = c.t_min; }
+    if (c.t_max !== undefined) { const el = document.getElementById("bm-tmax-input"); if (el) el.value = c.t_max; }
+    if (c.mode) { const el = document.getElementById("bm-mode-select"); if (el) el.value = c.mode; }
+    if (c.benchmark_mode) {
+      const el = document.getElementById("bm-benchmark-mode-select");
+      if (el) { el.value = c.benchmark_mode; bmUpdateModeUI(); }
+    }
+    bmSaveConfig();
+  } catch (e) { alert("Failed to load template: " + e); }
 }
 
 function bmLoadSavedConfig() {
@@ -4284,9 +4380,17 @@ async function bmRun() {
   const tMin = parseFloat(document.getElementById("bm-tmin-input")?.value || "300");
   const tMax = parseFloat(document.getElementById("bm-tmax-input")?.value || "3000");
   const mode = document.getElementById("bm-mode-select")?.value || "relaxed";
+  const benchmarkMode = document.getElementById("bm-benchmark-mode-select")?.value || "phase_diagram";
+  const structuresDir = document.getElementById("bm-structures-dir-input")?.value?.trim() || "";
+  const energyRefPath = document.getElementById("bm-energy-ref-input")?.value?.trim() || "";
+  const device = document.getElementById("bm-device-select")?.value || "cpu";
 
-  if (!_bmElements.length || !_bmSelectedMlips.size || !_bmSelectedPhases.size || !workdir) {
-    alert("Elements, MLIPs, phases, and workdir required."); return;
+  const needsPhases = benchmarkMode !== "energy";
+  if (!_bmElements.length || !_bmSelectedMlips.size || !workdir) {
+    alert("Elements, MLIPs, and workdir required."); return;
+  }
+  if (needsPhases && !_bmSelectedPhases.size) {
+    alert("Select at least one phase for this benchmark mode."); return;
   }
 
   document.getElementById("bm-run-btn").disabled = true;
@@ -4305,6 +4409,10 @@ async function bmRun() {
         t_min: tMin, t_max: tMax,
         mode,
         reference_tdb: refTdb,
+        benchmark_mode: benchmarkMode,
+        structures_dir: structuresDir,
+        energy_reference_path: energyRefPath,
+        device,
       }),
     });
     const data = await resp.json();
@@ -4316,6 +4424,16 @@ async function bmRun() {
     alert("Failed to start benchmark: " + e);
     document.getElementById("bm-run-btn").disabled = false;
   }
+}
+
+async function bmDownloadReport() {
+  if (!_bmActiveBenchmarkId) return;
+  window.open(`/api/benchmark/report/${_bmActiveBenchmarkId}`, "_blank");
+}
+
+async function bmExportJson() {
+  if (!_bmActiveBenchmarkId) return;
+  window.open(`/api/benchmark/export_json/${_bmActiveBenchmarkId}`, "_blank");
 }
 
 async function bmCancel() {
@@ -4357,6 +4475,11 @@ function bmApplyStatus(data) {
     bmRenderPhaseGrid(data);
     bmRenderMetricsTable(data);
   }
+  const done = data.state === "done" || data.state === "error";
+  const repBtn = document.getElementById("bm-report-btn");
+  const expBtn = document.getElementById("bm-export-btn");
+  if (repBtn) repBtn.style.display = done ? "" : "none";
+  if (expBtn) expBtn.style.display = done ? "" : "none";
 }
 
 function _bmStateColor(state) {
