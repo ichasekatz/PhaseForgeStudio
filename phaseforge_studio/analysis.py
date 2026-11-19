@@ -317,7 +317,25 @@ def _run_analysis(cfg: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]
             return {"analyzer": "annni", **scalar}
 
         if analyzer_name == "neb":
-            return {"error": "NEB requires two structures; not supported via single-file analysis"}
+            # NEB requires initial + final structures
+            final_rel_path: str = params.get("final_rel_path", "")
+            if not final_rel_path:
+                return {
+                    "error": (
+                        "NEB requires two structures. Provide 'final_rel_path' (path relative to "
+                        "path1) for the final-state structure alongside 'rel_path' for the initial state."
+                    )
+                }
+            final_path = path1 / final_rel_path
+            if not final_path.exists():
+                return {"error": f"Final structure not found: {final_rel_path}"}
+            final_atoms = ase_read(str(final_path))
+            from materialsframework.analysis.neb import NEBAnalyzer
+
+            result = NEBAnalyzer(calculator=calculator).calculate(atoms, final_atoms)
+            scalar = {k: float(v) for k, v in result.items() if isinstance(v, (int, float, np.floating))}
+            array = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in result.items() if k not in scalar}
+            return {"analyzer": "neb", **scalar, **array}
 
         return {"error": f"Unknown analyzer: {analyzer_name}"}
 

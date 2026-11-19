@@ -859,6 +859,12 @@ select option { background: var(--bg3); }
       <div class="section-label">Result</div>
       <div id="pfp-result-text" style="font-size:0.85em;"></div>
       <button id="pfp-download-btn" class="btn" style="margin-top:6px;display:none;" onclick="pfpDownloadTdb()">⬇ Download fitted TDB</button>
+      <button id="pfp-diagram-btn" class="btn" style="margin-top:4px;display:none;" onclick="pfpGeneratePhaseDiagram()">📊 Generate Phase Diagram</button>
+    </div>
+    <!-- Phase diagram output -->
+    <div id="pfp-diagram-panel" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);">
+      <div class="section-label">Phase Diagram</div>
+      <div id="pfp-diagram-imgs" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
     </div>
     <!-- Iteration plot placeholder -->
     <div id="pfp-chart-wrap" style="padding:10px 14px;border-bottom:1px solid var(--border);">
@@ -1414,6 +1420,93 @@ select option { background: var(--bg3); }
         <canvas id="analysis-chart" style="display:none;width:100%;height:150px;margin-top:8px;"></canvas>
       </div>
     </div>
+
+    <!-- ── Slab generation wizard ──────────────────────────── -->
+    <div id="slab-wizard-panel">
+      <h4>Slab Generator</h4>
+      <div class="analysis-row">
+        <label>Miller index</label>
+        <input type="text" id="slab-miller" value="1 0 0" placeholder="h k l" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Min slab (Å)</label>
+        <input type="number" id="slab-min-slab" value="7" min="1" step="0.5" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Min vacuum (Å)</label>
+        <input type="number" id="slab-min-vac" value="15" min="1" step="0.5" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label><input type="checkbox" id="slab-center" checked> Center slab</label>
+        <label><input type="checkbox" id="slab-reorient" checked> Reorient lattice</label>
+      </div>
+      <div class="analysis-row">
+        <label>Structure</label>
+        <span id="slab-struct-label" style="font-size:11px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">(select from browser)</span>
+      </div>
+      <div class="analysis-row">
+        <button class="btn" id="run-slab-btn" onclick="runSlabGen()" style="margin-left:auto;">⬡ Generate Slabs</button>
+      </div>
+      <div id="slab-spinner" style="font-size:11px;color:var(--accent);display:none;margin-top:4px;">⏳ Generating…</div>
+      <div id="slab-error" style="color:#f87171;font-size:11px;margin-top:6px;display:none;"></div>
+      <div id="slab-result" style="margin-top:8px;font-size:11px;display:none;">
+        <div id="slab-summary" style="font-weight:600;margin-bottom:4px;"></div>
+        <ul id="slab-list" style="list-style:disc;padding-left:16px;line-height:1.6;"></ul>
+      </div>
+    </div>
+
+    <!-- ── MF MD panel ───────────────────────────────────────── -->
+    <div id="mf-md-panel">
+      <h4>Molecular Dynamics</h4>
+      <div class="analysis-row">
+        <label>Calculator</label>
+        <select id="md-calc-select" style="flex:1"></select>
+      </div>
+      <div class="analysis-row">
+        <label>Ensemble</label>
+        <select id="md-ensemble-select" style="flex:1">
+          <option value="nvt_nose_hoover">NVT Nose-Hoover</option>
+          <option value="nve">NVE</option>
+          <option value="langevin">Langevin</option>
+          <option value="andersen">Andersen</option>
+          <option value="bussi">Bussi</option>
+          <option value="nvt_berendsen">NVT Berendsen</option>
+          <option value="nose_hoover_chain_nvt">NHC NVT</option>
+          <option value="npt_nose_hoover">NPT Nose-Hoover</option>
+          <option value="isotropic_mtk_npt">Isotropic MTK NPT</option>
+          <option value="mtk_npt">MTK NPT</option>
+          <option value="npt_berendsen">NPT Berendsen</option>
+        </select>
+      </div>
+      <div class="analysis-row">
+        <label>Temperature (K)</label>
+        <input type="number" id="md-temperature" value="300" min="1" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Steps</label>
+        <input type="number" id="md-steps" value="100" min="1" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Timestep (fs)</label>
+        <input type="number" id="md-timestep" value="1.0" min="0.1" step="0.1" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Structure</label>
+        <span id="md-struct-label" style="font-size:11px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">(select from browser)</span>
+      </div>
+      <div class="analysis-row">
+        <label>Timeout (s)</label>
+        <input type="number" id="md-timeout" value="300" min="10" style="width:80px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+        <button class="btn" id="run-md-btn" onclick="runMfMd()" style="margin-left:auto;">▶ Run MD</button>
+      </div>
+      <div id="md-spinner" style="font-size:11px;color:var(--accent);display:none;margin-top:4px;">⏳ Running MD…</div>
+      <div id="md-error" style="color:#f87171;font-size:11px;margin-top:6px;display:none;"></div>
+      <div id="md-result" style="margin-top:10px;padding:8px;background:var(--bg2);border-radius:4px;font-size:11px;display:none;">
+        <div id="md-summary" style="margin-bottom:6px;font-weight:600;"></div>
+        <canvas id="md-chart" style="width:100%;height:150px;"></canvas>
+        <button id="md-replay-btn" class="btn" style="margin-top:6px;display:none;" onclick="loadMdTrajectory()">▶ Replay in Viewer</button>
+      </div>
+    </div>
   </div>
 
 </div><!-- /panels -->
@@ -1491,6 +1584,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadStructure();
   loadPhaseDiagrams();
   initAnalyzers();
+  initMdCalculators();
 });
 
 // ── Config ─────────────────────────────────────────────────
@@ -1538,7 +1632,13 @@ function _applyWorkspaceView(workspace) {
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
   if (benchmarkView) benchmarkView.style.display = workspace === "benchmark" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
-  if (workspace === "blade") iframe.src = "/blade/";
+  if (workspace === "blade") {
+    iframe.src = "/blade/";
+    iframe.onload = function() {
+      // Send PFS config to BLADE iframe after load for config bridge
+      try { iframe.contentWindow.postMessage({type: "pfs-config", data: cfg}, "*"); } catch {}
+    };
+  }
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
   if (workspace === "paipai") initPaipaiWorkspace();
   if (workspace === "orchid") initOrchidWorkspace();
@@ -2935,6 +3035,8 @@ async function onBrowserClick(relPath, kind, name) {
   if (kind === "structure") {
     activeStructurePath = relPath;
     updateAnalyzerStructLabel();
+    updateMdStructLabel();
+    updateSlabStructLabel();
     try {
       switchTab("structure");
       await new Promise(res => requestAnimationFrame(res));
@@ -3283,6 +3385,200 @@ function renderAnalysisResult(data, info) {
     });
   } else {
     chartCanvas.style.display = "none";
+  }
+}
+
+// ── Slab generation wizard ───────────────────────────────────────────────────
+function updateSlabStructLabel() {
+  const lbl = document.getElementById("slab-struct-label");
+  if (!lbl) return;
+  lbl.textContent = activeStructurePath
+    ? activeStructurePath.split("/").slice(-3).join("/")
+    : "(select from browser)";
+}
+
+async function runSlabGen() {
+  const spinner  = document.getElementById("slab-spinner");
+  const errDiv   = document.getElementById("slab-error");
+  const resultDiv = document.getElementById("slab-result");
+  errDiv.style.display = "none";
+  resultDiv.style.display = "none";
+  if (!activeStructurePath) {
+    errDiv.textContent = "Select a structure from the file browser first.";
+    errDiv.style.display = "block";
+    return;
+  }
+  const millerRaw = (document.getElementById("slab-miller").value || "1 0 0").trim().split(/\s+/);
+  const millerIndex = millerRaw.map(Number);
+  if (millerIndex.length !== 3 || millerIndex.some(isNaN)) {
+    errDiv.textContent = "Miller index must be three integers, e.g. '1 0 0'.";
+    errDiv.style.display = "block";
+    return;
+  }
+  const min_slab_size = parseFloat(document.getElementById("slab-min-slab").value) || 7;
+  const min_vacuum_size = parseFloat(document.getElementById("slab-min-vac").value) || 15;
+  const center_slab = document.getElementById("slab-center").checked;
+  const reorient_lattice = document.getElementById("slab-reorient").checked;
+  spinner.style.display = "block";
+  document.getElementById("run-slab-btn").disabled = true;
+  try {
+    const r = await fetch("/api/mf_slab", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ rel_path: activeStructurePath, miller_index: millerIndex, min_slab_size, min_vacuum_size, center_slab, reorient_lattice }),
+    });
+    const data = await r.json();
+    if (data.error) {
+      errDiv.textContent = data.error + (data.traceback ? "\n\n" + data.traceback : "");
+      errDiv.style.display = "block";
+      errDiv.style.whiteSpace = "pre-wrap";
+      return;
+    }
+    document.getElementById("slab-summary").textContent =
+      `${data.n_slabs} slab(s) generated for (${millerIndex.join(" ")}) — click to use as structure`;
+    const ul = document.getElementById("slab-list");
+    ul.innerHTML = (data.slab_paths || []).map((p, i) =>
+      `<li><a href="#" onclick="event.preventDefault();activateSlabPath(${JSON.stringify(p)})">${p.split("/").pop()}</a></li>`
+    ).join("");
+    resultDiv.style.display = "block";
+  } catch(e) {
+    errDiv.textContent = "Request failed: " + e.message;
+    errDiv.style.display = "block";
+  } finally {
+    spinner.style.display = "none";
+    document.getElementById("run-slab-btn").disabled = false;
+  }
+}
+
+function activateSlabPath(relPath) {
+  activeStructurePath = relPath;
+  updateAnalyzerStructLabel();
+  updateMdStructLabel();
+  updateSlabStructLabel();
+}
+
+// ── MF MD panel ─────────────────────────────────────────────────────────────
+let _mdChart = null;
+let _mdTrajRel = null;
+
+async function initMdCalculators() {
+  const sel = document.getElementById("md-calc-select");
+  if (!sel) return;
+  let calcs = ["grace","orb","mace","sevennet","chgnet","m3gnet","mattersim",
+               "alignn","deepmd","eqv2","nequip","nequix","uma","vasp"];
+  try {
+    const r = await fetch("/api/calculators");
+    const d = await r.json();
+    if (Array.isArray(d) && d.length) calcs = d.map(c => c.name || c);
+  } catch {}
+  sel.innerHTML = calcs.map(c =>
+    `<option value="${c}"${c === "grace" ? " selected" : ""}>${c}</option>`
+  ).join("");
+}
+
+function updateMdStructLabel() {
+  const lbl = document.getElementById("md-struct-label");
+  if (!lbl) return;
+  lbl.textContent = activeStructurePath
+    ? activeStructurePath.split("/").slice(-3).join("/")
+    : "(select from browser)";
+}
+
+async function runMfMd() {
+  const spinner  = document.getElementById("md-spinner");
+  const errDiv   = document.getElementById("md-error");
+  const resultDiv = document.getElementById("md-result");
+  errDiv.style.display = "none";
+  resultDiv.style.display = "none";
+  if (!activeStructurePath) {
+    errDiv.textContent = "Select a structure from the file browser first.";
+    errDiv.style.display = "block";
+    return;
+  }
+  const calculator = document.getElementById("md-calc-select").value;
+  const ensemble   = document.getElementById("md-ensemble-select").value;
+  const temperature = parseInt(document.getElementById("md-temperature").value, 10) || 300;
+  const steps      = parseInt(document.getElementById("md-steps").value, 10) || 100;
+  const timestep   = parseFloat(document.getElementById("md-timestep").value) || 1.0;
+  const timeout    = parseInt(document.getElementById("md-timeout").value, 10) || 300;
+  spinner.style.display = "block";
+  document.getElementById("run-md-btn").disabled = true;
+  try {
+    const r = await fetch("/api/mf_md", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ rel_path: activeStructurePath, calculator, ensemble, temperature, steps, timestep, timeout }),
+    });
+    const data = await r.json();
+    if (data.error) {
+      errDiv.textContent = data.error + (data.traceback ? "\n\n" + data.traceback : "");
+      errDiv.style.display = "block";
+      errDiv.style.whiteSpace = "pre-wrap";
+      return;
+    }
+    renderMdResult(data);
+    resultDiv.style.display = "block";
+  } catch(e) {
+    errDiv.textContent = "Request failed: " + e.message;
+    errDiv.style.display = "block";
+  } finally {
+    spinner.style.display = "none";
+    document.getElementById("run-md-btn").disabled = false;
+  }
+}
+
+function renderMdResult(data) {
+  const summary = document.getElementById("md-summary");
+  const canvas  = document.getElementById("md-chart");
+  const replayBtn = document.getElementById("md-replay-btn");
+  const temps = data.temperature || [];
+  const pe    = data.potential_energy || [];
+  const nSteps = pe.length || temps.length;
+  summary.textContent = `${nSteps} frames · T_avg=${temps.length ? (temps.reduce((a,b)=>a+b,0)/temps.length).toFixed(1) : "—"} K`;
+  _mdTrajRel = data.traj_rel || null;
+  if (replayBtn) replayBtn.style.display = _mdTrajRel ? "inline-block" : "none";
+  if (_mdChart) { _mdChart.destroy(); _mdChart = null; }
+  if (pe.length) {
+    const pts = pe.map((v, i) => ({x: i, y: v}));
+    _mdChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: { datasets: [{ data: pts, borderColor: "#38bdf8", borderWidth: 1.5, pointRadius: 0, fill: false, label: "PE (eV)" }] },
+      options: {
+        scales: {
+          x: { type: "linear", title: { display: true, text: "Frame" } },
+          y: { title: { display: true, text: "E (eV)" } },
+        },
+        plugins: { legend: { display: true } },
+        animation: false,
+      },
+    });
+  }
+}
+
+async function loadMdTrajectory() {
+  if (!_mdTrajRel) return;
+  try {
+    const r = await fetch("/api/mf_traj?path=" + encodeURIComponent(_mdTrajRel));
+    const d = await r.json();
+    if (d.error) { alert("Trajectory load error: " + d.error); return; }
+    const { _split_xyz_frames_js } = window;
+    // Use existing splitXYZFrames helper if available, else inline split
+    const frames = typeof splitXYZFrames === "function"
+      ? splitXYZFrames(d.xyz)
+      : d.xyz.split(/(?=^\d+\n)/m).filter(f => f.trim());
+    if (!frames.length) { alert("No frames found in trajectory file."); return; }
+    trajFrames = frames;
+    trajIdx = 0;
+    const sl = document.getElementById("frame-slider");
+    if (sl) { sl.max = frames.length - 1; sl.value = 0; }
+    const lbl = document.getElementById("frame-label");
+    if (lbl) lbl.textContent = `Frame 1/${frames.length}`;
+    const ctrl = document.getElementById("traj-controls");
+    if (ctrl) ctrl.style.display = "flex";
+    showFrame(0);
+    switchTab("structure");
+  } catch(e) {
+    alert("Failed to load trajectory: " + e.message);
   }
 }
 
@@ -4162,6 +4458,8 @@ function pfpShowResult(result) {
   if (dl && result.output_tdb) {
     _pfpFittedTdb = result.output_tdb;
     dl.style.display = "";
+    const diagramBtn = document.getElementById("pfp-diagram-btn");
+    if (diagramBtn) diagramBtn.style.display = "";
   }
 }
 
@@ -4176,6 +4474,32 @@ async function pfpDownloadTdb() {
   a.href = URL.createObjectURL(blob);
   a.download = _pfpFittedTdb.split("/").pop() || "fitted.tdb";
   a.click();
+}
+
+async function pfpGeneratePhaseDiagram() {
+  if (!_pfpFittedTdb) { alert("No fitted TDB available. Run optimisation first."); return; }
+  const btn = document.getElementById("pfp-diagram-btn");
+  if (btn) btn.disabled = true;
+  const r = await fetch("/api/pfp_phase_diagram", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({tdb_path: _pfpFittedTdb}),
+  }).catch(() => null);
+  if (btn) btn.disabled = false;
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  if (d.error) { alert("Phase diagram error: " + d.error); return; }
+  const panel = document.getElementById("pfp-diagram-panel");
+  const imgs = document.getElementById("pfp-diagram-imgs");
+  if (!panel || !imgs) return;
+  imgs.innerHTML = "";
+  (d.pngs || []).forEach(p => {
+    const img = document.createElement("img");
+    img.src = "/api/fs/file?path=" + encodeURIComponent(p);
+    img.style.cssText = "max-width:100%;border-radius:4px;";
+    imgs.appendChild(img);
+  });
+  panel.style.display = "";
 }
 
 function pfpClearChart() {

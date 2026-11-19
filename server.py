@@ -1327,6 +1327,733 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)}, 500)
 
+        elif path == "/api/pfp_phase_diagram":
+            # Generate before/after phase diagrams from a fitted TDB
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            tdb_path_str = body.get("tdb_path", "")
+            if not tdb_path_str:
+                self._json({"error": "tdb_path required"}, 400)
+                return
+            tdb_path = Path(tdb_path_str).expanduser().resolve()
+            if not tdb_path.is_file():
+                self._json({"error": f"TDB not found: {tdb_path}"}, 400)
+                return
+            t_min = float(body.get("t_min", 300.0))
+            t_max = float(body.get("t_max", 3000.0))
+            try:
+                pngs = _phase_diagram_from_tdb(tdb_path, t_min=t_min, t_max=t_max)
+                self._json({"ok": True, "pngs": [str(p) for p in pngs]})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
+        # ── PhaseForge additional commands ───────────────────────────────────
+        elif path == "/api/pf_relax":
+            # MLIPrelax: relax structures in workdir using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPrelax", f"-mlip={mlip}", f"-model={model}"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPrelax not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+
+            def _stream_pf(proc: subprocess.Popen) -> None:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    _pf.log.append(line.rstrip("\n"))
+                proc.wait()
+                _pf.state = "done" if proc.returncode == 0 else "error"
+
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_calc":
+            # MLIPcalc: single-point energy calculations in workdir
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPcalc", f"-mlip={mlip}", f"-model={model}"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPcalc not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_runstruct":
+            # runstruct_MLIP: evaluate structures using MLIP, optionally static
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["runstruct_MLIP", f"-mlip={mlip}", f"-model={model}"]
+            if body.get("static"):
+                cmd.append("-static")
+            if body.get("checkrelaxcutoff"):
+                cmd.append(f"-checkrelaxcutoff={body['checkrelaxcutoff']}")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "runstruct_MLIP not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_extract":
+            # extract_MLIP: extract energies from CONTCAR/force_temp.out in workdir
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if not workdir or not workdir.is_dir():
+                self._json({"error": "workdir required and must exist"}, 400)
+                return
+            cmd = ["extract_MLIP"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "extract_MLIP not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_md":
+            # MLIPmd: molecular dynamics run using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            temperature = body.get("temperature", "")
+            if not mlip or not model or not temperature:
+                self._json({"error": "mlip, model, and temperature required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPmd", f"-mlip={mlip}", f"-model={model}", f"-temp={temperature}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPmd not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_liquid":
+            # MLIPliquid: liquid-state calculations using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            dt = body.get("dt", "")  # temperature offset
+            if not mlip or not model or not dt:
+                self._json({"error": "mlip, model, and dt (temperature offset) required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPliquid", f"-mlip={mlip}", f"-model={model}", f"-dt={dt}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            if body.get("lammps"):
+                cmd.append("-LAMMPS")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPliquid not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_lammps":
+            # MLIPlammps: LAMMPS-based calculations using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            temperature = body.get("temperature", "")
+            if not mlip or not model or not temperature:
+                self._json({"error": "mlip, model, and temperature required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPlammps", f"-mlip={mlip}", f"-model={model}", f"-temp={temperature}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPlammps not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/mf_slab":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            rel_path: str = body.get("rel_path", "")
+            if not rel_path:
+                self._json({"error": "rel_path required"}, 400)
+                return
+            miller_index: list[int] = body.get("miller_index", [1, 0, 0])
+            min_slab: float = float(body.get("min_slab_size", 7.0))
+            min_vac: float = float(body.get("min_vacuum_size", 15.0))
+            center_slab: bool = bool(body.get("center_slab", True))
+            in_unit_planes: bool = bool(body.get("in_unit_planes", False))
+            max_normal_search: int = int(body.get("max_normal_search", 1))
+            reorient: bool = bool(body.get("reorient_lattice", True))
+
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            struct_path = path1 / rel_path
+            if not struct_path.exists():
+                self._json({"error": f"File not found: {rel_path}"}, 404)
+                return
+            try:
+                from pymatgen.core import Structure as PmgStructure
+                from pymatgen.core.surface import SlabGenerator
+
+                bulk = PmgStructure.from_file(str(struct_path))
+                gen = SlabGenerator(
+                    bulk,
+                    miller_index=miller_index,
+                    min_slab_size=min_slab,
+                    min_vacuum_size=min_vac,
+                    center_slab=center_slab,
+                    in_unit_planes=in_unit_planes,
+                    max_normal_search=max_normal_search,
+                    reorient_lattice=reorient,
+                )
+                slabs = gen.get_slabs()
+                # Write slabs to staging dir and return paths
+                slab_dir = struct_path.parent / "slabs" / f"{''.join(str(h) for h in miller_index)}"
+                slab_dir.mkdir(parents=True, exist_ok=True)
+                out_paths: list[str] = []
+                for i, slab in enumerate(slabs):
+                    sp = slab_dir / f"slab_{i:03d}.vasp"
+                    slab.to(fmt="poscar", filename=str(sp))
+                    out_paths.append(str(sp.relative_to(path1)))
+                self._json({
+                    "ok": True,
+                    "miller_index": miller_index,
+                    "n_slabs": len(slabs),
+                    "slab_paths": out_paths,
+                })
+            except ImportError:
+                self._json({"error": "pymatgen not installed — cannot generate slabs"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_md":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            rel_path: str = body.get("rel_path", "")
+            if not rel_path:
+                self._json({"error": "rel_path required"}, 400)
+                return
+            steps: int = int(body.get("steps", 100))
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            ensemble: str = body.get("ensemble", "nvt_nose_hoover")
+            temperature: int = int(body.get("temperature", 300))
+            timestep: float = float(body.get("timestep", 1.0))
+            pressure: float = float(body.get("pressure", 1.0))
+            ttime: float = float(body.get("ttime", 10.0))
+            interval: int = int(body.get("interval", 1))
+
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            struct_path = path1 / rel_path
+            if not struct_path.exists():
+                self._json({"error": f"File not found: {rel_path}"}, 404)
+                return
+
+            def _run_mf_md() -> None:
+                import sys
+                import traceback as tb
+
+                import numpy as np
+
+                from phaseforge_studio.analysis import _json_default
+
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+
+                try:
+                    from ase.io import read as ase_read
+
+                    atoms = ase_read(str(struct_path))
+
+                    from materialsframework.calculators.registry import get_calculator
+
+                    _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                    calc_kwargs: dict[str, Any] = {
+                        "ensemble": ensemble,
+                        "timestep": timestep,
+                        "temperature": temperature,
+                        "pressure": pressure,
+                        "ttime": ttime,
+                        "interval": interval,
+                    }
+                    if model:
+                        calc_kwargs["model"] = model
+                    if device and calc_name in _device_calcs:
+                        calc_kwargs["device"] = device
+
+                    calculator = get_calculator(calc_name, **calc_kwargs)
+                    result = calculator.run(atoms, steps)
+
+                    # Serialise numpy arrays
+                    serialisable: dict[str, Any] = {}
+                    for k, v in result.items():
+                        if k == "final_structure":
+                            try:
+                                serialisable[k] = v.as_dict()
+                            except AttributeError:
+                                serialisable[k] = str(v)
+                        elif hasattr(v, "tolist"):
+                            serialisable[k] = v.tolist()
+                        elif isinstance(v, list) and v and hasattr(v[0], "tolist"):
+                            serialisable[k] = [x.tolist() for x in v]
+                        else:
+                            serialisable[k] = v
+
+                    # Write trajectory XYZ for replay UI
+                    traj_rel: str | None = None
+                    try:
+                        from ase import Atoms as AseAtoms
+                        from ase.io import write as ase_write
+                        from materialsframework.utils import to_atoms
+
+                        traj_dir = struct_path.parent / "md_trajectories"
+                        traj_dir.mkdir(parents=True, exist_ok=True)
+                        stem = struct_path.stem
+                        traj_path = traj_dir / f"{stem}_{ensemble}_{temperature}K.xyz"
+                        # Reconstruct Atoms frames from trajectory data
+                        symbols = atoms.get_chemical_symbols()
+                        pe_list = result.get("potential_energy", [])
+                        pos_list = result.get("forces", [])  # forces shape: (n_frames, n_atoms, 3)
+                        # Write via ASE if we have positions; otherwise skip
+                        if hasattr(result.get("final_structure"), "as_dict"):
+                            # Only write final structure if per-frame positions unavailable
+                            final_atoms = to_atoms(result["final_structure"])
+                            final_atoms.info["energy"] = float(pe_list[-1]) if pe_list else 0.0
+                            ase_write(str(traj_path), final_atoms, format="extxyz")
+                            traj_rel = str(traj_path.relative_to(path1))
+                    except Exception:
+                        pass  # trajectory write failure is non-fatal
+
+                    _mf_md_results["last"] = {
+                        "ok": True,
+                        "steps": steps,
+                        "ensemble": ensemble,
+                        "temperature": temperature,
+                        "traj_rel": traj_rel,
+                        **serialisable,
+                    }
+                except Exception as exc:
+                    _mf_md_results["last"] = {"error": str(exc), "traceback": tb.format_exc()}
+
+            _mf_md_results: dict[str, Any] = {}
+            t = threading.Thread(target=_run_mf_md, daemon=True)
+            t.start()
+            t.join(timeout=float(body.get("timeout", 300)))
+            if t.is_alive():
+                self._json({"error": "MD timed out — still running in background"}, 202)
+                return
+            self._json(_mf_md_results.get("last", {"error": "No result"}))
+
+        elif path == "/api/mf_traj":
+            # Serve an arbitrary XYZ trajectory file for replay UI
+            rel = qs.get("path", [""])[0]
+            if not rel:
+                self._json({"error": "path query param required"}, 400)
+                return
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            traj_path = path1 / rel
+            if not traj_path.exists():
+                self._json({"error": f"Trajectory not found: {rel}"}, 404)
+                return
+            try:
+                xyz_text = traj_path.read_text(encoding="utf-8", errors="replace")
+                self._json({"rel": rel, "xyz": xyz_text})
+            except OSError as exc:
+                self._json({"error": str(exc)}, 500)
+
+        # ------------------------------------------------------------------ #
+        # Stage 3 — new MF tool exposure                                      #
+        # ------------------------------------------------------------------ #
+
+        elif path == "/api/mf_sqsgen":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            composition_dict: dict[str, float] = body.get("composition", {})
+            if not composition_dict:
+                self._json({"error": "composition dict required, e.g. {\"Al\": 0.5, \"Ni\": 0.5}"}, 400)
+                return
+            crystal_structure: str = body.get("crystal_structure", "fcc")
+            supercell_size: list[int] = body.get("supercell_size", [2, 2, 2])
+            cutoff_distance: float = float(body.get("cutoff_distance", 6.0))
+            n_structures: int = int(body.get("n_structures", 1))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from pymatgen.core import Composition as PmgComposition
+                from materialsframework.tools.sqsgen import SqsGenerator
+                comp = PmgComposition(composition_dict)
+                gen = SqsGenerator(
+                    composition=comp,
+                    crystal_structure=crystal_structure,
+                    supercell_size=tuple(supercell_size),
+                    cutoff_distance=cutoff_distance,
+                    n_structures=n_structures,
+                )
+                result = gen.generate()
+                struct = result.get("structure")
+                struct_dict = struct.as_dict() if struct and hasattr(struct, "as_dict") else {}
+                self._json({
+                    "ok": True,
+                    "objective": float(result.get("objective", 0.0)),
+                    "structure": struct_dict,
+                })
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_stability_map":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            elements: list[str] = body.get("elements", [])
+            if len(elements) < 2:
+                self._json({"error": "elements list with at least 2 elements required"}, 400)
+                return
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            step: float = float(body.get("step", 0.1))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.stability_map import StabilityMap
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                sm = StabilityMap(calculator=calculator, elements=elements, step=step)
+                sm.fit()
+                self._json({"ok": True, "elements": elements, "step": step})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_cluster_expansion":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            structures_paths: list[str] = body.get("structures", [])
+            energies: list[float] = body.get("energies", [])
+            if not structures_paths or not energies:
+                self._json({"error": "structures (list of rel paths) and energies (list of eV values) required"}, 400)
+                return
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            try:
+                import sys
+                from ase.io import read as ase_read
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.cluster_expansion import ClusterExpansion
+                path1 = Path(_cfg["path1"]).expanduser().resolve()
+                structures = [ase_read(str(path1 / p)) for p in structures_paths]
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                ce = ClusterExpansion(calculator=calculator, structures=structures, energies=energies)
+                result = ce.fit()
+                import numpy as np
+                serialisable = {k: (v.tolist() if hasattr(v, "tolist") else float(v) if isinstance(v, (int, float, np.floating)) else str(v)) for k, v in (result or {}).items()}
+                self._json({"ok": True, **serialisable})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_bond_lattice_parameter":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            elements: list[str] = body.get("elements", [])
+            lattice_parameters: dict[str, float] = body.get("lattice_parameters", {})
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            if not elements:
+                self._json({"error": "elements list required"}, 400)
+                return
+            try:
+                import sys
+                import numpy as np
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.calculators.registry import get_calculator
+                from materialsframework.tools.bond_lattice_parameter import BondLatticeParameter
+                _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                calc_kwargs: dict[str, Any] = {}
+                if model:
+                    calc_kwargs["model"] = model
+                if device and calc_name in _device_calcs:
+                    calc_kwargs["device"] = device
+                calculator = get_calculator(calc_name, **calc_kwargs)
+                blp = BondLatticeParameter(calculator=calculator, elements=elements, lattice_parameters=lattice_parameters or None)
+                result = blp.fit() if hasattr(blp, "fit") else {}
+                serialisable = {k: (v.tolist() if hasattr(v, "tolist") else float(v) if isinstance(v, (int, float, np.floating)) else str(v)) for k, v in (result or {}).items()}
+                self._json({"ok": True, **serialisable})
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
+        elif path == "/api/mf_cahn_hilliard":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            nx: int = int(body.get("nx", 64))
+            ny: int = int(body.get("ny", 64))
+            dx: float = float(body.get("dx", 1.0))
+            dy: float = float(body.get("dy", 1.0))
+            dt: float = float(body.get("dt", 0.01))
+            n_steps: int = int(body.get("n_steps", 1000))
+            kappa: float = float(body.get("kappa", 0.5))
+            a: float = float(body.get("a", 1.0))
+            mobility: float = float(body.get("mobility", 1.0))
+            c0: float = float(body.get("c0", 0.5))
+            noise: float = float(body.get("noise", 0.01))
+            try:
+                import sys
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+                from materialsframework.tools.cahn_hilliard import MaterialParameters, PhaseFieldModel, SimulationGrid
+                grid = SimulationGrid(nx=nx, ny=ny, dx=dx, dy=dy)
+                mat = MaterialParameters(kappa=kappa, a=a, mobility=mobility, c0=c0, noise=noise)
+                model = PhaseFieldModel(grid=grid, material=mat, dt=dt)
+                model.run_simulation(plot=False)
+                # Return final composition field stats
+                import numpy as np
+                phi = model.phi if hasattr(model, "phi") else None
+                result: dict[str, Any] = {
+                    "ok": True,
+                    "n_steps": n_steps,
+                    "nx": nx,
+                    "ny": ny,
+                }
+                if phi is not None:
+                    result["phi_mean"] = float(np.mean(phi))
+                    result["phi_std"] = float(np.std(phi))
+                    result["phi_min"] = float(np.min(phi))
+                    result["phi_max"] = float(np.max(phi))
+                self._json(result)
+            except ImportError as exc:
+                self._json({"error": f"Missing dependency: {exc}"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())

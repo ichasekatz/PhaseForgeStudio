@@ -464,8 +464,49 @@ def patch_toml(text: str, section: str, key: str, value) -> str:
         return key_pat.sub(rf"\g<1>{toml_val}", text, count=1)
 
 
+# CSS variables injected into BLADE iframe so it shares the PFS design system.
+_PFS_CSS_INJECT = """<style id="pfs-design-system">
+:root {
+  --bg:    #0d1117;
+  --bg2:   #161b22;
+  --bg3:   #21262d;
+  --text:  #e6edf3;
+  --text2: #8b949e;
+  --border:#30363d;
+  --accent:#38bdf8;
+  --teal:  #2dd4bf;
+  --red:   #f87171;
+  --green: #4ade80;
+  --yellow:#facc15;
+  --font:  'JetBrains Mono', 'Fira Code', monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font); }
+</style>"""
+
+# postMessage config bridge: listens for {type:"pfs-config", data:{...}} from parent.
+_PFS_CONFIG_BRIDGE = """<script id="pfs-config-bridge">
+(function(){
+  window.addEventListener("message", function(ev){
+    if(!ev.data || ev.data.type !== "pfs-config") return;
+    var cfg = ev.data.data || {};
+    // Pre-fill common BLADE config fields if present
+    ["toml-path-input","blade-path1","config-path"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el && cfg.blade_toml && !el.value) el.value = cfg.blade_toml;
+    });
+    // Store on window for BLADE scripts to consume
+    window._pfsConfig = cfg;
+  });
+})();
+</script>"""
+
+
 def serve_blade_index(blade_index_path: Path, toml_path: str = "") -> bytes:
     """Read BLADE's index.html and rewrite /api/ → /blade/api/ for all fetch calls.
+
+    Injects PFS shared CSS design-system variables and a postMessage config
+    bridge so the BLADE iframe inherits the parent frame's colour scheme and
+    can receive config updates without a page reload.
 
     If toml_path is given, inject a script that pre-fills the TOML path input.
     """
@@ -473,6 +514,14 @@ def serve_blade_index(blade_index_path: Path, toml_path: str = "") -> bytes:
     text = text.replace("fetch('/api/", "fetch('/blade/api/")
     text = text.replace('fetch("/api/', 'fetch("/blade/api/')
     text = text.replace("fetch(`/api/", "fetch(`/blade/api/")
+
+    # Inject PFS design system CSS and config bridge before </head>
+    head_inject = _PFS_CSS_INJECT + "\n" + _PFS_CONFIG_BRIDGE
+    if "</head>" in text:
+        text = text.replace("</head>", head_inject + "\n</head>", 1)
+    else:
+        text = head_inject + "\n" + text
+
     if toml_path:
         import html as _html
 

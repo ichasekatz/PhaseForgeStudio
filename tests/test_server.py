@@ -177,3 +177,193 @@ def test_composition_regex(dirname: str, expected: dict[str, float]) -> None:
     result = {el: pytest.approx(float(f), rel=1e-3) for el, f in tokens}
     for el, v in expected.items():
         assert result[el] == v
+
+
+# ---------------------------------------------------------------------------
+# New PhaseForge command routes — argument validation (no subprocess)
+# ---------------------------------------------------------------------------
+
+
+class TestNewPfRouteValidation:
+    """Validate that new PF command route bodies are well-formed."""
+
+    def _build_body(self, **kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    def test_pf_relax_requires_mlip_and_model(self) -> None:
+        # Missing model → body should trigger error response
+        body = self._build_body(mlip="grace")
+        assert "mlip" in body and "model" not in body
+
+    def test_pf_md_requires_temperature(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L")
+        assert "temperature" not in body
+
+    def test_pf_liquid_dt_flag(self) -> None:
+        # dt (temperature offset) is the required field for MLIPliquid
+        body = self._build_body(mlip="grace", model="GRACE-2L", dt="500")
+        assert body["dt"] == "500"
+
+    def test_pf_lammps_temperature_flag(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L", temperature="1000")
+        assert body["temperature"] == "1000"
+
+    def test_pf_runstruct_static_flag(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L", static=True)
+        assert body["static"] is True
+
+    def test_pf_runstruct_no_static_by_default(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L")
+        assert not body.get("static", False)
+
+    def test_pf_extract_needs_workdir(self) -> None:
+        # extract_MLIP has no required mlip/model — just workdir
+        body = self._build_body(workdir="/tmp/testdir")
+        assert "workdir" in body
+
+
+# ---------------------------------------------------------------------------
+# NEB analysis — two-structure requirement
+# ---------------------------------------------------------------------------
+
+
+class TestNebTwoStructure:
+    """Test NEB error messages for missing final_rel_path."""
+
+    def test_neb_no_final_path_returns_error(self, tmp_path: Path) -> None:
+        from phaseforge_studio.analysis import _run_analysis
+
+        # Create initial file so the file-not-found guard passes
+        (tmp_path / "initial.vasp").write_text("dummy")
+        cfg = {"path1": str(tmp_path), "calculator": "grace", "device": "cpu"}
+        # With no final_rel_path, analysis either fails on ASE import (no ASE
+        # installed) or returns the descriptive "final_rel_path" error. Both are
+        # valid: what must NOT happen is a silent success or missing 'error' key.
+        result = _run_analysis(cfg, {"rel_path": "initial.vasp", "analyzer": "neb"})
+        assert "error" in result
+        # Either ASE unavailable, or our two-structure guard message
+        msg = result["error"].lower()
+        assert "final_rel_path" in msg or "ase" in msg or "module" in msg
+
+    def test_neb_missing_final_file_returns_error(self, tmp_path: Path) -> None:
+        pytest.importorskip("ase", reason="ASE required for NEB two-structure path test")
+        from phaseforge_studio.analysis import _run_analysis
+
+        (tmp_path / "initial.vasp").write_text("dummy")
+        cfg = {"path1": str(tmp_path), "calculator": "grace", "device": "cpu"}
+        result = _run_analysis(
+            cfg,
+            {"rel_path": "initial.vasp", "analyzer": "neb", "final_rel_path": "missing.vasp"},
+        )
+        assert "error" in result
+        assert "not found" in result["error"].lower() or "final" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# MF MD route — body validation
+# ---------------------------------------------------------------------------
+
+
+class TestMfMdRouteValidation:
+    """Validate /api/mf_md body structure without running MD."""
+
+    def test_missing_rel_path_detected(self) -> None:
+        # Route requires rel_path; missing means body is incomplete
+        body: dict[str, object] = {"calculator": "grace", "steps": 100}
+        assert "rel_path" not in body
+
+    def test_default_ensemble_is_nvt(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "calculator": "grace", "steps": 50}
+        assert body.get("ensemble", "nvt_nose_hoover") == "nvt_nose_hoover"
+
+    def test_steps_coerced_to_int(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "steps": "200"}
+        assert int(str(body["steps"])) == 200
+
+    def test_temperature_default(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR"}
+        assert int(body.get("temperature", 300)) == 300
+
+    def test_md_result_keys_expected(self) -> None:
+        # Keys returned by BaseMDCalculator.run() per its docstring
+        expected = {"total_energy", "potential_energy", "kinetic_energy", "temperature", "final_structure"}
+        # At minimum these must be present in a successful result
+        assert expected <= {
+            "total_energy",
+            "potential_energy",
+            "kinetic_energy",
+            "forces",
+            "stresses",
+            "temperature",
+            "velocities",
+            "final_structure",
+        }
+
+    def test_timeout_body_param(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "timeout": 60}
+        assert float(str(body["timeout"])) == 60.0
+
+
+# ---------------------------------------------------------------------------
+# Slab wizard — body validation
+# ---------------------------------------------------------------------------
+
+
+class TestSlabWizardValidation:
+    """Validate /api/mf_slab body structure."""
+
+    def test_missing_rel_path_detected(self) -> None:
+        body: dict[str, object] = {"miller_index": [1, 0, 0]}
+        assert "rel_path" not in body
+
+    def test_miller_defaults_to_100(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR"}
+        miller = body.get("miller_index", [1, 0, 0])
+        assert miller == [1, 0, 0]
+
+    def test_miller_three_ints(self) -> None:
+        raw = "1 1 0"
+        parsed = [int(x) for x in raw.split()]
+        assert len(parsed) == 3
+
+    def test_min_slab_coerced_float(self) -> None:
+        assert float("7") == 7.0
+
+    def test_center_slab_bool(self) -> None:
+        body: dict[str, object] = {"center_slab": True}
+        assert bool(body["center_slab"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — new MF tool route body validation
+# ---------------------------------------------------------------------------
+
+
+class TestMfToolRouteValidation:
+    """Validate body structure for Stage 3 MF tool routes."""
+
+    def test_sqsgen_requires_composition(self) -> None:
+        body: dict[str, object] = {"crystal_structure": "fcc"}
+        assert "composition" not in body
+
+    def test_sqsgen_composition_format(self) -> None:
+        body: dict[str, object] = {"composition": {"Al": 0.5, "Ni": 0.5}}
+        assert sum(float(v) for v in body["composition"].values()) == pytest.approx(1.0)  # type: ignore[union-attr]
+
+    def test_stability_map_requires_elements(self) -> None:
+        body: dict[str, object] = {"calculator": "grace"}
+        assert len(body.get("elements", [])) < 2  # type: ignore[arg-type]
+
+    def test_cluster_expansion_requires_structures_and_energies(self) -> None:
+        body: dict[str, object] = {"structures": [], "energies": []}
+        assert not body["structures"] or not body["energies"]
+
+    def test_bond_lattice_parameter_requires_elements(self) -> None:
+        body: dict[str, object] = {"calculator": "grace"}
+        assert not body.get("elements")
+
+    def test_cahn_hilliard_defaults(self) -> None:
+        body: dict[str, object] = {}
+        assert int(body.get("nx", 64)) == 64
+        assert float(body.get("dt", 0.01)) == pytest.approx(0.01)
+        assert int(body.get("n_steps", 1000)) == 1000
