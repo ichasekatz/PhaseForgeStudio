@@ -128,6 +128,8 @@ from phaseforge_studio.benchmark_adapter import (  # noqa: E402
     get_benchmark_status,
     list_benchmarks,
 )
+from phaseforge_studio.benchmark_templates import list_templates, apply_template  # noqa: E402
+from phaseforge_studio.benchmark_report import build_json_export, build_text_report  # noqa: E402
 
 _pfp_job = PfpJob()
 
@@ -622,6 +624,17 @@ class StudioHandler(BaseHTTPRequestHandler):
         elif path == "/api/benchmark/list":
             self._json({"benchmarks": list_benchmarks()})
 
+        elif path == "/api/benchmark/templates":
+            self._json({"templates": list_templates()})
+
+        elif path.startswith("/api/benchmark/template/"):
+            tmpl_name = path[len("/api/benchmark/template/"):]
+            try:
+                result = apply_template(tmpl_name)
+                self._json({"ok": True, "config": result})
+            except KeyError as exc:
+                self._json({"error": str(exc)}, 404)
+
         elif path.startswith("/api/benchmark/status/"):
             bm_id = path[len("/api/benchmark/status/"):]
             status = get_benchmark_status(bm_id)
@@ -629,6 +642,37 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, 404)
             else:
                 self._json(status)
+
+        elif path.startswith("/api/benchmark/report/"):
+            bm_id = path[len("/api/benchmark/report/"):]
+            status = get_benchmark_status(bm_id)
+            if status is None:
+                self._json({"error": "not found"}, 404)
+            else:
+                text = build_text_report(status)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="benchmark_{bm_id}.txt"')
+                self.end_headers()
+                self.wfile.write(text.encode())
+
+        elif path.startswith("/api/benchmark/export_json/"):
+            bm_id = path[len("/api/benchmark/export_json/"):]
+            status = get_benchmark_status(bm_id)
+            if status is None:
+                self._json({"error": "not found"}, 404)
+            else:
+                export = build_json_export(
+                    status,
+                    energy_result=status.get("energy_result"),
+                    stability_result=status.get("stability_result"),
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Disposition", f'attachment; filename="benchmark_{bm_id}.json"')
+                self.end_headers()
+                import json as _json
+                self.wfile.write(_json.dumps(export, indent=2).encode())
 
         elif path.startswith("/benchmark_file/"):
             # Serve files from benchmark run directories.
@@ -1409,6 +1453,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 x_step=float(body.get("x_step", 0.02)),
                 mode=body.get("mode", "relaxed"),
                 reference_tdb=body.get("reference_tdb", "") or self.cfg.get("benchmark_reference_tdb", ""),
+                benchmark_mode=body.get("benchmark_mode", "phase_diagram"),
+                structures_dir=body.get("structures_dir", ""),
+                energy_reference_path=body.get("energy_reference_path", ""),
+                device=body.get("device", "cpu"),
             )
             self._json({"ok": True, "benchmark_id": bm_id})
 

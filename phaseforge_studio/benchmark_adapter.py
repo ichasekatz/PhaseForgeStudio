@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from phaseforge_studio.benchmark_cache import make_cache_key, save_to_cache, load_from_cache, is_cache_valid
 from phaseforge_studio.benchmark_metrics import compute_metrics
 from phaseforge_studio.plotting import _phase_diagram_from_tdb
 
@@ -77,6 +78,10 @@ class BenchmarkConfig:
     reference_tdb: str
     workdir: str
     created_at: float
+    benchmark_mode: str = "phase_diagram"  # energy|phase_diagram|stability|complete
+    structures_dir: str = ""
+    energy_reference_path: str = ""
+    device: str = "cpu"
 
 
 @dataclass
@@ -131,6 +136,9 @@ class BenchmarkRun:
     cancel_flag: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
     run_dir: Path | None = None
+    energy_result: dict[str, Any] | None = None
+    stability_result: dict[str, Any] | None = None
+    report_paths: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +402,7 @@ def _run_mlip_job(
 
 
 def _orchestrate(run: BenchmarkRun) -> None:
-    """Orchestration thread: run each MLIP job sequentially.
+    """Orchestration thread: run each MLIP job sequentially, then mode runners.
 
     Sequential execution avoids GPU memory conflicts between MLIP models.
     Sets ``run.state`` to ``"done"`` if all succeed, ``"error"`` on any failure,
@@ -405,15 +413,81 @@ def _orchestrate(run: BenchmarkRun) -> None:
     """
     run.state = "running"
     any_error = False
+    bm_mode = run.config.benchmark_mode
 
-    for mlip in run.config.mlips:
-        if run.cancel_flag.is_set():
-            run.state = "canceled"
-            return
-        job = run.mlip_jobs[mlip]
-        _run_mlip_job(run, job)
-        if job.state == "error":
-            any_error = True
+    # Sqscal phase diagram jobs — needed for phase_diagram, stability, complete
+    if bm_mode in ("phase_diagram", "stability", "complete"):
+        for mlip in run.config.mlips:
+            if run.cancel_flag.is_set():
+                run.state = "canceled"
+                return
+            job = run.mlip_jobs[mlip]
+            _run_mlip_job(run, job)
+            if job.state == "error":
+                any_error = True
+
+    if run.cancel_flag.is_set():
+        run.state = "canceled"
+        return
+
+    # Energy benchmark
+    if bm_mode in ("energy", "complete") and run.config.energy_reference_path:
+        try:
+            from phaseforge_studio.benchmark_modes import run_energy_benchmark  # noqa: PLC0415
+            assert run.run_dir is not None
+            cache_dir = run.run_dir / ".bm_cache"
+            run.energy_result = run_energy_benchmark(
+                structures_dir=Path(run.config.structures_dir),
+                reference_path=Path(run.config.energy_reference_path),
+                mlips=run.config.mlips,
+                cache_dir=cache_dir,
+                device=run.config.device,
+                use_cache=True,
+            )
+        except Exception as exc:
+            run.energy_result = {"available": False, "error": str(exc)}
+
+    if run.cancel_flag.is_set():
+        run.state = "canceled"
+        return
+
+    # Stability benchmark — build tdb_map from phase diagram results
+    if bm_mode in ("stability", "complete"):
+        try:
+            from phaseforge_studio.benchmark_modes import run_stability_benchmark  # noqa: PLC0415
+            tdb_map = {
+                mlip: Path(job.tdb_path)
+                for mlip, job in run.mlip_jobs.items()
+                if job.tdb_path
+            }
+            temperatures = list(range(
+                int(run.config.t_min),
+                int(run.config.t_max) + 1,
+                max(1, int(run.config.t_step)),
+            ))
+            run.stability_result = run_stability_benchmark(
+                tdb_map=tdb_map,
+                elements=run.config.elements,
+                temperatures=temperatures,
+                n_grid=51,
+            )
+        except Exception as exc:
+            run.stability_result = {"available": False, "error": str(exc)}
+
+    # Generate text + JSON report to run_dir/report/
+    if run.run_dir is not None:
+        try:
+            from phaseforge_studio.benchmark_report import write_report  # noqa: PLC0415
+            status = get_benchmark_status(run.config.benchmark_id)
+            if status is not None:
+                run.report_paths = write_report(
+                    run.run_dir,
+                    status,
+                    energy_result=run.energy_result,
+                    stability_result=run.stability_result,
+                )
+        except Exception:
+            pass
 
     if run.cancel_flag.is_set():
         run.state = "canceled"
@@ -441,6 +515,10 @@ def create_and_launch_benchmark(
     x_step: float = 0.02,
     mode: str = "relaxed",
     reference_tdb: str = "",
+    benchmark_mode: str = "phase_diagram",
+    structures_dir: str = "",
+    energy_reference_path: str = "",
+    device: str = "cpu",
 ) -> str:
     """Create a benchmark run and start background orchestration.
 
@@ -457,6 +535,11 @@ def create_and_launch_benchmark(
         x_step (float): Composition step for metrics grid.
         mode (str): ``"relaxed"`` (Mode B) or ``"fixed"`` (Mode A).
         reference_tdb (str): Path to reference TDB file.
+        benchmark_mode (str): One of ``"phase_diagram"``, ``"energy"``,
+            ``"stability"``, or ``"complete"``.
+        structures_dir (str): Directory of POSCAR/CIF files for energy mode.
+        energy_reference_path (str): JSON file with DFT reference energies.
+        device (str): Calculator device, e.g. ``"cpu"`` or ``"cuda"``.
 
     Returns:
         benchmark_id (str): 8-character hex ID for polling.
@@ -478,6 +561,10 @@ def create_and_launch_benchmark(
         reference_tdb=reference_tdb,
         workdir=workdir,
         created_at=time.time(),
+        benchmark_mode=benchmark_mode,
+        structures_dir=structures_dir,
+        energy_reference_path=energy_reference_path,
+        device=device,
     )
 
     mlip_jobs = {m: MlipJobState(mlip=m) for m in mlips}
@@ -525,6 +612,9 @@ def get_benchmark_status(benchmark_id: str) -> dict[str, Any] | None:
         "created_at": run.config.created_at,
         "run_dir": str(run.run_dir) if run.run_dir else None,
         "config": asdict(run.config),
+        "energy_result": run.energy_result,
+        "stability_result": run.stability_result,
+        "report_paths": run.report_paths,
     }
 
 
