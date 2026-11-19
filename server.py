@@ -1327,6 +1327,321 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)}, 500)
 
+        elif path == "/api/pfp_phase_diagram":
+            # Generate before/after phase diagrams from a fitted TDB
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            tdb_path_str = body.get("tdb_path", "")
+            if not tdb_path_str:
+                self._json({"error": "tdb_path required"}, 400)
+                return
+            tdb_path = Path(tdb_path_str).expanduser().resolve()
+            if not tdb_path.is_file():
+                self._json({"error": f"TDB not found: {tdb_path}"}, 400)
+                return
+            t_min = float(body.get("t_min", 300.0))
+            t_max = float(body.get("t_max", 3000.0))
+            try:
+                pngs = _phase_diagram_from_tdb(tdb_path, t_min=t_min, t_max=t_max)
+                self._json({"ok": True, "pngs": [str(p) for p in pngs]})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
+        # ── PhaseForge additional commands ───────────────────────────────────
+        elif path == "/api/pf_relax":
+            # MLIPrelax: relax structures in workdir using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPrelax", f"-mlip={mlip}", f"-model={model}"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPrelax not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+
+            def _stream_pf(proc: subprocess.Popen) -> None:
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    _pf.log.append(line.rstrip("\n"))
+                proc.wait()
+                _pf.state = "done" if proc.returncode == 0 else "error"
+
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_calc":
+            # MLIPcalc: single-point energy calculations in workdir
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPcalc", f"-mlip={mlip}", f"-model={model}"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPcalc not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_runstruct":
+            # runstruct_MLIP: evaluate structures using MLIP, optionally static
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            if not mlip or not model:
+                self._json({"error": "mlip and model required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["runstruct_MLIP", f"-mlip={mlip}", f"-model={model}"]
+            if body.get("static"):
+                cmd.append("-static")
+            if body.get("checkrelaxcutoff"):
+                cmd.append(f"-checkrelaxcutoff={body['checkrelaxcutoff']}")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "runstruct_MLIP not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_extract":
+            # extract_MLIP: extract energies from CONTCAR/force_temp.out in workdir
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if not workdir or not workdir.is_dir():
+                self._json({"error": "workdir required and must exist"}, 400)
+                return
+            cmd = ["extract_MLIP"]
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "extract_MLIP not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_md":
+            # MLIPmd: molecular dynamics run using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            temperature = body.get("temperature", "")
+            if not mlip or not model or not temperature:
+                self._json({"error": "mlip, model, and temperature required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPmd", f"-mlip={mlip}", f"-model={model}", f"-temp={temperature}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPmd not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_liquid":
+            # MLIPliquid: liquid-state calculations using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            dt = body.get("dt", "")  # temperature offset
+            if not mlip or not model or not dt:
+                self._json({"error": "mlip, model, and dt (temperature offset) required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPliquid", f"-mlip={mlip}", f"-model={model}", f"-dt={dt}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            if body.get("lammps"):
+                cmd.append("-LAMMPS")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPliquid not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
+        elif path == "/api/pf_lammps":
+            # MLIPlammps: LAMMPS-based calculations using MLIP
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            mlip = body.get("mlip", "")
+            model = body.get("model", "")
+            temperature = body.get("temperature", "")
+            if not mlip or not model or not temperature:
+                self._json({"error": "mlip, model, and temperature required"}, 400)
+                return
+            workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
+            workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
+            if workdir and not workdir.is_dir():
+                self._json({"error": f"workdir not found: {workdir}"}, 400)
+                return
+            cmd = ["MLIPlammps", f"-mlip={mlip}", f"-model={model}", f"-temp={temperature}"]
+            if body.get("norun"):
+                cmd.append("-nr")
+            _pf.log = []
+            _pf.state = "running"
+            try:
+                _pf.proc = subprocess.Popen(
+                    cmd,
+                    cwd=str(workdir) if workdir else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                _pf.state = "error"
+                self._json({"error": "MLIPlammps not found on PATH"}, 500)
+                return
+            except OSError as exc:
+                _pf.state = "error"
+                self._json({"error": str(exc)}, 500)
+                return
+            threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
+            self._json({"ok": True, "command": " ".join(cmd)})
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())

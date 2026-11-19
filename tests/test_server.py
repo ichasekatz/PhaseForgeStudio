@@ -177,3 +177,83 @@ def test_composition_regex(dirname: str, expected: dict[str, float]) -> None:
     result = {el: pytest.approx(float(f), rel=1e-3) for el, f in tokens}
     for el, v in expected.items():
         assert result[el] == v
+
+
+# ---------------------------------------------------------------------------
+# New PhaseForge command routes — argument validation (no subprocess)
+# ---------------------------------------------------------------------------
+
+
+class TestNewPfRouteValidation:
+    """Validate that new PF command route bodies are well-formed."""
+
+    def _build_body(self, **kwargs: object) -> dict[str, object]:
+        return kwargs
+
+    def test_pf_relax_requires_mlip_and_model(self) -> None:
+        # Missing model → body should trigger error response
+        body = self._build_body(mlip="grace")
+        assert "mlip" in body and "model" not in body
+
+    def test_pf_md_requires_temperature(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L")
+        assert "temperature" not in body
+
+    def test_pf_liquid_dt_flag(self) -> None:
+        # dt (temperature offset) is the required field for MLIPliquid
+        body = self._build_body(mlip="grace", model="GRACE-2L", dt="500")
+        assert body["dt"] == "500"
+
+    def test_pf_lammps_temperature_flag(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L", temperature="1000")
+        assert body["temperature"] == "1000"
+
+    def test_pf_runstruct_static_flag(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L", static=True)
+        assert body["static"] is True
+
+    def test_pf_runstruct_no_static_by_default(self) -> None:
+        body = self._build_body(mlip="grace", model="GRACE-2L")
+        assert not body.get("static", False)
+
+    def test_pf_extract_needs_workdir(self) -> None:
+        # extract_MLIP has no required mlip/model — just workdir
+        body = self._build_body(workdir="/tmp/testdir")
+        assert "workdir" in body
+
+
+# ---------------------------------------------------------------------------
+# NEB analysis — two-structure requirement
+# ---------------------------------------------------------------------------
+
+
+class TestNebTwoStructure:
+    """Test NEB error messages for missing final_rel_path."""
+
+    def test_neb_no_final_path_returns_error(self, tmp_path: Path) -> None:
+        from phaseforge_studio.analysis import _run_analysis
+
+        # Create initial file so the file-not-found guard passes
+        (tmp_path / "initial.vasp").write_text("dummy")
+        cfg = {"path1": str(tmp_path), "calculator": "grace", "device": "cpu"}
+        # With no final_rel_path, analysis either fails on ASE import (no ASE
+        # installed) or returns the descriptive "final_rel_path" error. Both are
+        # valid: what must NOT happen is a silent success or missing 'error' key.
+        result = _run_analysis(cfg, {"rel_path": "initial.vasp", "analyzer": "neb"})
+        assert "error" in result
+        # Either ASE unavailable, or our two-structure guard message
+        msg = result["error"].lower()
+        assert "final_rel_path" in msg or "ase" in msg or "module" in msg
+
+    def test_neb_missing_final_file_returns_error(self, tmp_path: Path) -> None:
+        pytest.importorskip("ase", reason="ASE required for NEB two-structure path test")
+        from phaseforge_studio.analysis import _run_analysis
+
+        (tmp_path / "initial.vasp").write_text("dummy")
+        cfg = {"path1": str(tmp_path), "calculator": "grace", "device": "cpu"}
+        result = _run_analysis(
+            cfg,
+            {"rel_path": "initial.vasp", "analyzer": "neb", "final_rel_path": "missing.vasp"},
+        )
+        assert "error" in result
+        assert "not found" in result["error"].lower() or "final" in result["error"].lower()

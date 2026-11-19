@@ -859,6 +859,12 @@ select option { background: var(--bg3); }
       <div class="section-label">Result</div>
       <div id="pfp-result-text" style="font-size:0.85em;"></div>
       <button id="pfp-download-btn" class="btn" style="margin-top:6px;display:none;" onclick="pfpDownloadTdb()">⬇ Download fitted TDB</button>
+      <button id="pfp-diagram-btn" class="btn" style="margin-top:4px;display:none;" onclick="pfpGeneratePhaseDiagram()">📊 Generate Phase Diagram</button>
+    </div>
+    <!-- Phase diagram output -->
+    <div id="pfp-diagram-panel" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);">
+      <div class="section-label">Phase Diagram</div>
+      <div id="pfp-diagram-imgs" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
     </div>
     <!-- Iteration plot placeholder -->
     <div id="pfp-chart-wrap" style="padding:10px 14px;border-bottom:1px solid var(--border);">
@@ -4162,6 +4168,8 @@ function pfpShowResult(result) {
   if (dl && result.output_tdb) {
     _pfpFittedTdb = result.output_tdb;
     dl.style.display = "";
+    const diagramBtn = document.getElementById("pfp-diagram-btn");
+    if (diagramBtn) diagramBtn.style.display = "";
   }
 }
 
@@ -4176,6 +4184,32 @@ async function pfpDownloadTdb() {
   a.href = URL.createObjectURL(blob);
   a.download = _pfpFittedTdb.split("/").pop() || "fitted.tdb";
   a.click();
+}
+
+async function pfpGeneratePhaseDiagram() {
+  if (!_pfpFittedTdb) { alert("No fitted TDB available. Run optimisation first."); return; }
+  const btn = document.getElementById("pfp-diagram-btn");
+  if (btn) btn.disabled = true;
+  const r = await fetch("/api/pfp_phase_diagram", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({tdb_path: _pfpFittedTdb}),
+  }).catch(() => null);
+  if (btn) btn.disabled = false;
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  if (d.error) { alert("Phase diagram error: " + d.error); return; }
+  const panel = document.getElementById("pfp-diagram-panel");
+  const imgs = document.getElementById("pfp-diagram-imgs");
+  if (!panel || !imgs) return;
+  imgs.innerHTML = "";
+  (d.pngs || []).forEach(p => {
+    const img = document.createElement("img");
+    img.src = "/api/fs/file?path=" + encodeURIComponent(p);
+    img.style.cssText = "max-width:100%;border-radius:4px;";
+    imgs.appendChild(img);
+  });
+  panel.style.display = "";
 }
 
 function pfpClearChart() {
