@@ -35,7 +35,7 @@ for _src in [_gui_dir / "MaterialsFramework" / "src"]:
     if _src.exists() and _s not in sys.path:
         sys.path.insert(0, _s)
 
-import phaseforge_studio.job as _job_mod  # noqa: E402
+import phaseforge_studio.job as _job_mod  # noqa: E402, I001
 from phaseforge_studio import (  # noqa: E402
     _job,
     _job_history,
@@ -79,6 +79,17 @@ from phaseforge_studio.blade import (  # noqa: E402
     serve_blade_index,
 )
 from phaseforge_studio.config import _server_dir  # noqa: E402
+from phaseforge_studio.core.artifact_registry import actions_for_file  # noqa: E402
+from phaseforge_studio.core.file_types import detect  # noqa: E402
+from phaseforge_studio.core.job_manager import _manager as _job_manager  # noqa: E402
+from phaseforge_studio.core.projects import Project, _registry as _project_registry  # noqa: E402
+from phaseforge_studio.core.workflows import list_workflows  # noqa: E402
+from phaseforge_studio.filesystem import (  # noqa: E402
+    list_roots,
+    register_root,
+    search_files,
+    universal_browse,
+)
 from phaseforge_studio.orchid_adapter import (  # noqa: E402
     check_orchid_mcp,
     compare_to_dft,
@@ -278,6 +289,154 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/live_structure":
             self._json(get_live_structure(_resolve(self.cfg, "path1")))
+
+        # ── Universal file explorer ──────────────────────────────────────────
+        elif path == "/api/fs/roots":
+            self._json({"roots": list_roots()})
+
+        elif path == "/api/fs/browse":
+            root = qs.get("root", ["mf"])[0]
+            rel = qs.get("path", [""])[0]
+            self._json(universal_browse(root, rel))
+
+        elif path == "/api/fs/search":
+            root = qs.get("root", ["mf"])[0]
+            query = qs.get("q", [""])[0]
+            limit = int(qs.get("limit", ["50"])[0])
+            self._json({"results": search_files(root, query, max_results=limit)})
+
+        elif path == "/api/fs/actions":
+            abs_path_str = qs.get("path", [""])[0]
+            if not abs_path_str:
+                self._json({"error": "path required"}, 400)
+                return
+            p = Path(abs_path_str)
+            if not p.exists():
+                self._json({"error": "not found"}, 404)
+                return
+            ft = detect(p)
+            self._json({"path": str(p), "ft": ft, "actions": actions_for_file(p, ft)})
+
+        elif path == "/api/fs/read_text":
+            abs_path_str = qs.get("path", [""])[0]
+            max_bytes = int(qs.get("max_bytes", ["16384"])[0])
+            if not abs_path_str:
+                self._json({"error": "path required"}, 400)
+                return
+            p = Path(abs_path_str)
+            if not p.is_file():
+                self._json({"error": "not found"}, 404)
+                return
+            try:
+                text = p.read_text(errors="ignore")[:max_bytes]
+                self._json({"path": str(p), "content": text, "truncated": len(p.read_bytes()) > max_bytes})
+            except OSError as exc:
+                self._json({"error": str(exc)}, 500)
+
+        # ── Unified job manager ──────────────────────────────────────────────
+        elif path == "/api/jobs/all":
+            framework = qs.get("framework", [None])[0]
+            active_only = qs.get("active_only", ["false"])[0].lower() == "true"
+            self._json({"jobs": _job_manager.list_jobs(framework=framework, active_only=active_only)})
+
+        elif path == "/api/jobs/status":
+            job_id = qs.get("job_id", [""])[0]
+            if not job_id:
+                self._json({"error": "job_id required"}, 400)
+                return
+            try:
+                self._json(_job_manager.get(job_id).as_dict())
+            except KeyError:
+                self._json({"error": "not found"}, 404)
+
+        # ── Projects ─────────────────────────────────────────────────────────
+        elif path == "/api/projects":
+            self._json({"projects": _project_registry.list_projects()})
+
+        elif path == "/api/workflows":
+            self._json({"workflows": list_workflows()})
+
+        # ── ORCHID GET endpoints (query-string based) ────────────────────────
+        elif path == "/api/orchid/search":
+            elements = qs.get("elements", [])
+            system = qs.get("system", [""])[0]
+            if not elements and not system:
+                self._json({"error": "elements or system required"}, 400)
+                return
+            if system and not elements:
+                elements = system.split("-")
+            try:
+                results = orchid_search_systems(
+                    elements=elements,
+                    exact=qs.get("exact", ["false"])[0].lower() == "true",
+                    limit=int(qs.get("limit", ["50"])[0]),
+                )
+                self._json({"results": results})
+            except Exception as exc:
+                self._json({"error": str(exc), "results": []})
+
+        elif path == "/api/orchid/system":
+            system = qs.get("system", [""])[0]
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                data = get_system_data(
+                    system=system,
+                    property_group=qs.get("property_group", [None])[0],
+                    evidence_class=qs.get("evidence_class", [None])[0],
+                )
+                self._json(data)
+            except Exception as exc:
+                self._json({"error": str(exc), "system": system})
+
+        elif path == "/api/orchid/phase_diagram":
+            system = qs.get("system", [""])[0]
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                self._json(get_phase_diagram(system=system))
+            except Exception as exc:
+                self._json({"error": str(exc), "system": system})
+
+        elif path == "/api/orchid/invariant":
+            system = qs.get("system", [""])[0]
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                self._json({"reactions": get_invariant_reactions(system, qs.get("source", ["literature"])[0])})
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/orchid/compare_dft":
+            system = qs.get("system", [""])[0]
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                self._json(compare_to_dft(system))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/orchid/tdb_list":
+            elements = qs.get("elements", [])
+            try:
+                tdbs = list_tdb_files(elements=elements if elements else None)
+                self._json({"tdbs": tdbs})
+            except Exception as exc:
+                self._json({"error": str(exc), "tdbs": []})
+
+        elif path == "/api/orchid/get_tdb":
+            file_id = qs.get("file_id", [""])[0]
+            if not file_id:
+                self._json({"error": "file_id required"}, 400)
+                return
+            try:
+                self._json({"content": get_tdb_content(file_id), "file_id": file_id})
+            except Exception as exc:
+                self._json({"error": str(exc)})
 
         elif path in ("/blade", "/blade/", "/blade/index.html"):
             blade_root = (
@@ -936,6 +1095,123 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
+        # ── Unified job manager (POST) ───────────────────────────────────────
+        elif path == "/api/jobs/cancel":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            job_id = body.get("job_id", "")
+            if not job_id:
+                self._json({"error": "job_id required"}, 400)
+                return
+            try:
+                _job_manager.cancel(job_id)
+                self._json({"ok": True, "job_id": job_id})
+            except KeyError:
+                self._json({"error": "not found"}, 404)
+
+        # ── Projects (POST) ──────────────────────────────────────────────────
+        elif path == "/api/projects/create":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            root = body.get("root", "")
+            name = body.get("name", "")
+            if not root or not name:
+                self._json({"error": "root and name required"}, 400)
+                return
+            try:
+                proj = Project.create(root=root, name=name, description=body.get("description", ""))
+                _project_registry.register(proj)
+                self._json({"ok": True, "project": proj.as_dict()})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
+        elif path == "/api/projects/open":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            root = body.get("root", "")
+            if not root:
+                self._json({"error": "root required"}, 400)
+                return
+            try:
+                proj = Project.load(root)
+                _project_registry.register(proj)
+                self._json({"ok": True, "project": proj.as_dict()})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 404)
+
+        # ── Cross-framework transfer ──────────────────────────────────────────
+        elif path == "/api/transfer":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            abs_path_str = body.get("path", "")
+            action_id = body.get("action_id", "")
+            if not abs_path_str or not action_id:
+                self._json({"error": "path and action_id required"}, 400)
+                return
+            p = Path(abs_path_str)
+            if not p.exists():
+                self._json({"error": "file not found"}, 404)
+                return
+            ft = detect(p)
+            valid_actions = {a["action_id"] for a in actions_for_file(p, ft)}
+            if action_id not in valid_actions:
+                self._json({"error": f"action {action_id!r} not valid for {ft!r}"}, 400)
+                return
+            try:
+                if action_id == "paipai_set_input":
+                    # Send structure to PAIPAI workdir as struc.in
+                    workdir_str = self.cfg.get("paipai_workdir", "")
+                    lattice_name = self.cfg.get("paipai_lattice_name", "FCC")
+                    if not workdir_str:
+                        self._json({"error": "paipai_workdir not configured"}, 400)
+                        return
+                    workdir = Path(workdir_str).expanduser().resolve()
+                    poscar_text = p.read_text(errors="ignore")
+                    struc_in_from_poscar(
+                        workdir=workdir,
+                        poscar_text=poscar_text,
+                        lattice_name=lattice_name,
+                        interstitial_elements=self.cfg.get("paipai_interstitial_elements", []),
+                        interstitial_counts=self.cfg.get("paipai_interstitial_counts", []),
+                    )
+                    self._json({"ok": True, "target": "paipai", "struc_in": str(workdir / "struc.in")})
+
+                elif action_id == "view_structure":
+                    # Return XYZ for 3Dmol viewer
+                    from phaseforge_studio.structure import _poscar_to_xyz
+                    text = p.read_text(errors="ignore")
+                    xyz = _poscar_to_xyz(text) or text
+                    self._json({"ok": True, "target": "mf", "xyz": xyz, "format": "xyz", "label": p.name})
+
+                elif action_id in ("blade_open_tdb", "pf_open_tdb"):
+                    # Return TDB content for BLADE/PF viewer
+                    content = p.read_text(errors="ignore")
+                    self._json({"ok": True, "target": action_id.split("_")[0], "content": content, "path": str(p)})
+
+                elif action_id in ("convert_to_xyz", "convert_to_poscar"):
+                    from phaseforge_studio.core.converters import convert_file
+                    target_fmt = "xyz" if action_id == "convert_to_xyz" else "poscar"
+                    converted = convert_file(p, target_fmt)
+                    self._json({"ok": True, "content": converted, "format": target_fmt})
+
+                else:
+                    self._json({"ok": True, "action_id": action_id, "path": str(p), "ft": ft,
+                                "note": "generic transfer — handle on client side"})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
         elif path == "/blade/api/toml_write":
             try:
                 body = json.loads(self._read_body())
@@ -1049,6 +1325,29 @@ def main() -> None:
 
     StudioHandler.config_path = args.config
     StudioHandler.cfg = cfg
+
+    # Register universal file browser roots from config
+    _root_keys = {
+        "mf": "path1",
+        "pf": "pf_workdir",
+        "blade": "blade_path1",
+        "paipai": "paipai_workdir",
+        "orchid": "orchid_data_dir",
+    }
+    for label, cfg_key in _root_keys.items():
+        raw = cfg.get(cfg_key, "")
+        if raw:
+            p = Path(raw).expanduser().resolve()
+            if p.exists():
+                register_root(label, p)
+                print(f"  fs root [{label:7s}]: {p}")
+
+    # Scan for projects in known directories
+    project_roots = [cfg.get("path1", ""), cfg.get("blade_path1", ""), cfg.get("pf_workdir", "")]
+    scan_dirs = [Path(r).expanduser().resolve().parent for r in project_roots if r]
+    _project_registry.scan(scan_dirs)
+    if _project_registry.list_projects():
+        print(f"  projects: {len(_project_registry.list_projects())} found")
 
     server = ThreadingHTTPServer(("", args.port), StudioHandler)
     try:

@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from phaseforge_studio.core.file_types import FT_DIR, describe, detect, is_structure, is_thermodynamic_db, is_trajectory
 from phaseforge_studio.structure import _build_elem_map, _parse_atat_structure, _poscar_to_xyz
 
 _lattice_pattern = re.compile(r"^[A-Za-z0-9_]+_\d+$")
@@ -421,3 +422,172 @@ def get_live_structure(path1: Path) -> dict[str, Any]:
         }
     except Exception:
         return {"xyz": None, "full_xyz": None, "frame": 0, "total_frames": 0, "path": ""}
+
+
+# ---------------------------------------------------------------------------
+# Universal multi-root file browser
+# ---------------------------------------------------------------------------
+
+#: Root labels registered by each framework  (populated by server.py at startup)
+_universal_roots: dict[str, Path] = {}
+
+
+def register_root(label: str, path: Path) -> None:
+    """Register a named root directory for the universal file browser.
+
+    Args:
+        label (str): Short label shown in the breadcrumb (e.g. ``"mf"``, ``"paipai"``).
+        path (Path): Absolute path to register.
+    """
+    _universal_roots[label] = path.expanduser().resolve()
+
+
+def list_roots() -> list[dict[str, Any]]:
+    """Return all registered roots as JSON-serialisable dicts.
+
+    Returns:
+        List of dicts with ``label``, ``path``, ``exists``.
+    """
+    return [
+        {"label": k, "path": str(v), "exists": v.exists()}
+        for k, v in sorted(_universal_roots.items())
+    ]
+
+
+def universal_browse(root_label: str, rel: str) -> dict[str, Any]:
+    """List a directory under a registered root using the shared file-type system.
+
+    Returns entries enriched with ``ft``, ``icon``, ``label_ft``, and
+    ``actions`` (list of applicable action_id strings) in addition to the
+    legacy ``kind`` field (kept for backward compat with the existing frontend).
+
+    Args:
+        root_label (str): Registered root label (see :func:`register_root`).
+        rel (str): Relative path under the root to list.
+
+    Returns:
+        Dict with ``root``, ``path``, ``entries``, and optionally ``error``.
+    """
+    from phaseforge_studio.core.artifact_registry import actions_for_file
+
+    root = _universal_roots.get(root_label)
+    if root is None:
+        return {"root": root_label, "path": "", "entries": [], "error": f"Unknown root {root_label!r}"}
+
+    safe_rel = rel.strip("/").replace("..", "")
+    target = root / safe_rel if safe_rel else root
+    display_path = safe_rel if safe_rel else "/"
+
+    if not target.exists() or not target.is_dir():
+        return {"root": root_label, "path": display_path, "entries": [], "error": "Path not found"}
+
+    try:
+        items = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+    except OSError as exc:
+        return {"root": root_label, "path": display_path, "entries": [], "error": str(exc)}
+
+    entries: list[dict[str, Any]] = []
+    for item in items:
+        if item.name.startswith("."):
+            continue
+        try:
+            st = item.stat()
+        except OSError:
+            continue
+
+        ft = detect(item)
+        meta = describe(ft)
+
+        # Legacy kind field (backward compat)
+        if ft == FT_DIR:
+            kind = "dir"
+        elif is_structure(ft):
+            kind = "structure"
+        elif is_thermodynamic_db(ft):
+            kind = "tdb"
+        elif is_trajectory(ft):
+            kind = "trajectory"
+        elif ft == "image":
+            kind = "png"
+        elif ft == "energy":
+            kind = "energy"
+        else:
+            kind = "file"
+
+        actions = [a["action_id"] for a in actions_for_file(item, ft)]
+
+        entries.append(
+            {
+                "name": item.name,
+                "kind": kind,
+                "ft": ft,
+                "icon": meta["icon"],
+                "label_ft": meta["label"],
+                "rel_path": str(item.relative_to(root)),
+                "abs_path": str(item),
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+                "actions": actions,
+            }
+        )
+
+    return {"root": root_label, "path": display_path, "entries": entries}
+
+
+def search_files(
+    root_label: str,
+    query: str,
+    max_results: int = 50,
+) -> list[dict[str, Any]]:
+    """Recursively search a registered root for files matching a query.
+
+    Matches against filename (case-insensitive substring).  Skips hidden
+    files and directories.
+
+    Args:
+        root_label (str): Registered root label.
+        query (str): Search string.
+        max_results (int): Maximum number of results.
+
+    Returns:
+        List of entry dicts (same shape as :func:`universal_browse` entries).
+    """
+    from phaseforge_studio.core.artifact_registry import actions_for_file
+
+    root = _universal_roots.get(root_label)
+    if root is None or not root.is_dir():
+        return []
+
+    q = query.lower()
+    results: list[dict[str, Any]] = []
+
+    for item in root.rglob("*"):
+        if len(results) >= max_results:
+            break
+        if any(part.startswith(".") for part in item.parts):
+            continue
+        if q not in item.name.lower():
+            continue
+        try:
+            st = item.stat()
+        except OSError:
+            continue
+        ft = detect(item)
+        meta = describe(ft)
+        actions = [a["action_id"] for a in actions_for_file(item, ft)]
+        results.append(
+            {
+                "name": item.name,
+                "kind": "dir" if ft == FT_DIR else ("structure" if is_structure(ft) else "file"),
+                "ft": ft,
+                "icon": meta["icon"],
+                "label_ft": meta["label"],
+                "rel_path": str(item.relative_to(root)),
+                "abs_path": str(item),
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+                "actions": actions,
+            }
+        )
+
+    return results
