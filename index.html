@@ -535,6 +535,10 @@ select option { background: var(--bg3); }
           <input type="checkbox" id="pf-sro-chk" onchange="buildPfCommand();savePfConfig()" style="accent-color:var(--accent)">
           Short-range order (-sro)
         </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="pf-checkrelax-chk" onchange="buildPfCommand();savePfConfig()" style="accent-color:var(--accent)">
+          Check relaxation (-checkrelax)
+        </label>
       </div>
     </div>
 
@@ -746,6 +750,10 @@ select option { background: var(--bg3); }
     <!-- TDB preview tab -->
     <div id="orchid-tab-tdb" style="flex:1;overflow:hidden;display:none;flex-direction:column;">
       <div id="orchid-tdb-preview" style="flex:1;font-family:var(--font);font-size:10px;color:var(--text);overflow-y:auto;padding:12px;white-space:pre;"></div>
+      <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;">
+        <button class="btn" style="flex:1;" onclick="orchidImportTdb()">⬇ Import TDB locally</button>
+        <button class="btn" style="flex:1;background:var(--accent);color:#fff;" onclick="orchidSendToPfp()">→ Send to PFP</button>
+      </div>
     </div>
   </div>
 
@@ -1363,12 +1371,14 @@ function buildPfCommand() {
   const level = document.getElementById("pf-level-input")?.value || "2";
   const vib = document.getElementById("pf-vib-chk")?.checked;
   const sro = document.getElementById("pf-sro-chk")?.checked;
+  const checkrelax = document.getElementById("pf-checkrelax-chk")?.checked;
   const elems = pfSpecies.join(",") || "Ni,Re";
   const lats = [...pfSelectedLattices].join(",") || "FCC_A1";
   let cmd = `sqscal -e ${elems} -l ${lats} -lv ${level} -mlip ${mlip}`;
   if (model) cmd += ` -model ${model}`;
   if (vib) cmd += " -vib";
   if (sro) cmd += " -sro";
+  if (checkrelax) cmd += " -checkrelax";
   const pre = document.getElementById("pf-cmd-preview");
   if (pre) pre.textContent = cmd;
   return cmd;
@@ -1382,6 +1392,7 @@ async function savePfConfig() {
   cfg.pf_model = document.getElementById("pf-model-input")?.value || "";
   cfg.pf_vib = document.getElementById("pf-vib-chk")?.checked || false;
   cfg.pf_sro = document.getElementById("pf-sro-chk")?.checked || false;
+  cfg.pf_checkrelax = document.getElementById("pf-checkrelax-chk")?.checked || false;
   cfg.pf_workdir = document.getElementById("pf-workdir-input")?.value ||
                    document.getElementById("pf-workdir-cfg-input")?.value || "";
   try {
@@ -1400,6 +1411,7 @@ async function runPhaseForge() {
     model: document.getElementById("pf-model-input")?.value || "",
     vib: document.getElementById("pf-vib-chk")?.checked || false,
     sro: document.getElementById("pf-sro-chk")?.checked || false,
+    checkrelax: document.getElementById("pf-checkrelax-chk")?.checked || false,
     workdir,
   };
   const logEl = document.getElementById("pf-log");
@@ -3701,6 +3713,29 @@ async function orchidImportTdb() {
     alert("TDB imported: " + (d.path || d.message || "done"));
   } catch (e) {
     alert("Import error: " + e);
+  }
+}
+
+async function orchidSendToPfp() {
+  if (!_orchidSelectedTdb) { alert("Select an ORCHID TDB first."); return; }
+  const system = document.getElementById("orchid-system")?.value?.trim() || "";
+  try {
+    const r = await fetch("/api/orchid/import_tdb", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({file_id: _orchidSelectedTdb, system}),
+    });
+    const d = await r.json();
+    if (d.error) { alert("Import failed: " + d.error); return; }
+    const tdbPath = d.path;
+    if (!tdbPath) { alert("Import succeeded but no path returned."); return; }
+    // Switch to PFP workspace and populate tdb-path
+    await switchWorkspace("pfp");
+    const pfpTdb = document.getElementById("pfp-tdb-path");
+    if (pfpTdb) pfpTdb.value = tdbPath;
+    alert("ORCHID TDB imported and loaded in PhaseForgePlus.\nPath: " + tdbPath);
+  } catch (e) {
+    alert("Error sending to PFP: " + e);
   }
 }
 

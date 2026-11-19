@@ -42,6 +42,7 @@ _default_config: dict[str, Any] = {
     "pf_model": "GRACE-2L-OMAT",
     "pf_vib": False,
     "pf_sro": False,
+    "pf_checkrelax": False,
     # PAIPAI workspace
     "paipai_workdir": "",
     "paipai_lattice_name": "FCC",

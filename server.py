@@ -760,6 +760,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             model = body.get("model", "")
             vib = bool(body.get("vib", False))
             sro = bool(body.get("sro", False))
+            checkrelax = bool(body.get("checkrelax", False))
             workdir_str = body.get("workdir", "") or self.cfg.get("pf_workdir", "")
             workdir = Path(workdir_str).expanduser().resolve() if workdir_str else None
             if not elements or not lattices:
@@ -772,6 +773,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 cmd.append("-vib")
             if sro:
                 cmd.append("-sro")
+            if checkrelax:
+                cmd.append("-checkrelax")
             _pf.log = []
             _pf.state = "running"
             try:
