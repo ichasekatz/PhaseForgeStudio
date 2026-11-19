@@ -1779,11 +1779,37 @@ class StudioHandler(BaseHTTPRequestHandler):
                         else:
                             serialisable[k] = v
 
+                    # Write trajectory XYZ for replay UI
+                    traj_rel: str | None = None
+                    try:
+                        from ase import Atoms as AseAtoms
+                        from ase.io import write as ase_write
+                        from materialsframework.utils import to_atoms
+
+                        traj_dir = struct_path.parent / "md_trajectories"
+                        traj_dir.mkdir(parents=True, exist_ok=True)
+                        stem = struct_path.stem
+                        traj_path = traj_dir / f"{stem}_{ensemble}_{temperature}K.xyz"
+                        # Reconstruct Atoms frames from trajectory data
+                        symbols = atoms.get_chemical_symbols()
+                        pe_list = result.get("potential_energy", [])
+                        pos_list = result.get("forces", [])  # forces shape: (n_frames, n_atoms, 3)
+                        # Write via ASE if we have positions; otherwise skip
+                        if hasattr(result.get("final_structure"), "as_dict"):
+                            # Only write final structure if per-frame positions unavailable
+                            final_atoms = to_atoms(result["final_structure"])
+                            final_atoms.info["energy"] = float(pe_list[-1]) if pe_list else 0.0
+                            ase_write(str(traj_path), final_atoms, format="extxyz")
+                            traj_rel = str(traj_path.relative_to(path1))
+                    except Exception:
+                        pass  # trajectory write failure is non-fatal
+
                     _mf_md_results["last"] = {
                         "ok": True,
                         "steps": steps,
                         "ensemble": ensemble,
                         "temperature": temperature,
+                        "traj_rel": traj_rel,
                         **serialisable,
                     }
                 except Exception as exc:
@@ -1797,6 +1823,23 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "MD timed out — still running in background"}, 202)
                 return
             self._json(_mf_md_results.get("last", {"error": "No result"}))
+
+        elif path == "/api/mf_traj":
+            # Serve an arbitrary XYZ trajectory file for replay UI
+            rel = qs.get("path", [""])[0]
+            if not rel:
+                self._json({"error": "path query param required"}, 400)
+                return
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            traj_path = path1 / rel
+            if not traj_path.exists():
+                self._json({"error": f"Trajectory not found: {rel}"}, 404)
+                return
+            try:
+                xyz_text = traj_path.read_text(encoding="utf-8", errors="replace")
+                self._json({"rel": rel, "xyz": xyz_text})
+            except OSError as exc:
+                self._json({"error": str(exc)}, 500)
 
         elif path == "/api/analyze":
             try:

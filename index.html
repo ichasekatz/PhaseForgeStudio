@@ -1504,6 +1504,7 @@ select option { background: var(--bg3); }
       <div id="md-result" style="margin-top:10px;padding:8px;background:var(--bg2);border-radius:4px;font-size:11px;display:none;">
         <div id="md-summary" style="margin-bottom:6px;font-weight:600;"></div>
         <canvas id="md-chart" style="width:100%;height:150px;"></canvas>
+        <button id="md-replay-btn" class="btn" style="margin-top:6px;display:none;" onclick="loadMdTrajectory()">▶ Replay in Viewer</button>
       </div>
     </div>
   </div>
@@ -3452,6 +3453,7 @@ function activateSlabPath(relPath) {
 
 // ── MF MD panel ─────────────────────────────────────────────────────────────
 let _mdChart = null;
+let _mdTrajRel = null;
 
 async function initMdCalculators() {
   const sel = document.getElementById("md-calc-select");
@@ -3522,10 +3524,13 @@ async function runMfMd() {
 function renderMdResult(data) {
   const summary = document.getElementById("md-summary");
   const canvas  = document.getElementById("md-chart");
+  const replayBtn = document.getElementById("md-replay-btn");
   const temps = data.temperature || [];
   const pe    = data.potential_energy || [];
   const nSteps = pe.length || temps.length;
   summary.textContent = `${nSteps} frames · T_avg=${temps.length ? (temps.reduce((a,b)=>a+b,0)/temps.length).toFixed(1) : "—"} K`;
+  _mdTrajRel = data.traj_rel || null;
+  if (replayBtn) replayBtn.style.display = _mdTrajRel ? "inline-block" : "none";
   if (_mdChart) { _mdChart.destroy(); _mdChart = null; }
   if (pe.length) {
     const pts = pe.map((v, i) => ({x: i, y: v}));
@@ -3541,6 +3546,33 @@ function renderMdResult(data) {
         animation: false,
       },
     });
+  }
+}
+
+async function loadMdTrajectory() {
+  if (!_mdTrajRel) return;
+  try {
+    const r = await fetch("/api/mf_traj?path=" + encodeURIComponent(_mdTrajRel));
+    const d = await r.json();
+    if (d.error) { alert("Trajectory load error: " + d.error); return; }
+    const { _split_xyz_frames_js } = window;
+    // Use existing splitXYZFrames helper if available, else inline split
+    const frames = typeof splitXYZFrames === "function"
+      ? splitXYZFrames(d.xyz)
+      : d.xyz.split(/(?=^\d+\n)/m).filter(f => f.trim());
+    if (!frames.length) { alert("No frames found in trajectory file."); return; }
+    trajFrames = frames;
+    trajIdx = 0;
+    const sl = document.getElementById("frame-slider");
+    if (sl) { sl.max = frames.length - 1; sl.value = 0; }
+    const lbl = document.getElementById("frame-label");
+    if (lbl) lbl.textContent = `Frame 1/${frames.length}`;
+    const ctrl = document.getElementById("traj-controls");
+    if (ctrl) ctrl.style.display = "flex";
+    showFrame(0);
+    switchTab("structure");
+  } catch(e) {
+    alert("Failed to load trajectory: " + e.message);
   }
 }
 
