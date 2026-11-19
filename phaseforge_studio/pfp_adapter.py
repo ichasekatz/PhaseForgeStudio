@@ -120,11 +120,17 @@ class PfpJob:
 # ---------------------------------------------------------------------------
 
 
-def _make_callback(job: PfpJob) -> Any:
+def _make_callback(job: PfpJob, last_fval: list[float], last_gnorm: list[float]) -> Any:
     """Return a scipy callback that records per-iteration data into job.
+
+    Records iteration number, parameter vector, objective value, and gradient
+    norm (populated by the objective wrapper in ``_make_objective_wrapper``).
 
     Args:
         job (PfpJob): Job whose ``iterations`` list receives each record.
+        last_fval (list[float]): Single-element list updated by the objective
+            wrapper with the most recent objective value.
+        last_gnorm (list[float]): Single-element list updated with ‖grad‖₂.
 
     Returns:
         A callable compatible with ``scipy.optimize.minimize(callback=...)``.
@@ -137,10 +143,39 @@ def _make_callback(job: PfpJob) -> Any:
 
         it = iteration_counter[0]
         iteration_counter[0] += 1
-        job.iterations.append({"iteration": it, "params": np.asarray(xk).tolist()})
+        job.iterations.append({
+            "iteration": it,
+            "params": np.asarray(xk).tolist(),
+            "fval": last_fval[0] if last_fval else None,
+            "grad_norm": last_gnorm[0] if last_gnorm else None,
+        })
         return job.cancel_flag.is_set()
 
     return _cb
+
+
+def _make_objective_wrapper(func: Any, last_fval: list[float], last_gnorm: list[float]) -> Any:
+    """Wrap an (f, grad) objective to capture the last seen values.
+
+    Args:
+        func: Callable returning ``(float, np.ndarray)`` — objective + gradient.
+        last_fval (list[float]): Single-element list; updated with ``f`` on each call.
+        last_gnorm (list[float]): Single-element list; updated with ``‖grad‖₂``.
+
+    Returns:
+        Wrapped objective with the same signature.
+    """
+    import numpy as np
+
+    def _wrapped(x: Any) -> Any:
+        result = func(x)
+        if isinstance(result, tuple) and len(result) == 2:
+            f, g = result
+            last_fval[:] = [float(f)]
+            last_gnorm[:] = [float(np.linalg.norm(np.asarray(g)))]
+        return result
+
+    return _wrapped
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +243,11 @@ def _run_pfp(
 
     from phaseforgeplus.utils.objective import objective_function
 
-    func = objective_function(pfp.db, pfp.db_zpf, pfp.db_neq)
-    callback = _make_callback(job)
+    _raw_func = objective_function(pfp.db, pfp.db_zpf, pfp.db_neq)
+    _last_fval: list[float] = []
+    _last_gnorm: list[float] = []
+    func = _make_objective_wrapper(_raw_func, _last_fval, _last_gnorm)
+    callback = _make_callback(job, _last_fval, _last_gnorm)
 
     try:
         opt_result: scipy_optimize.OptimizeResult = scipy_optimize.minimize(
