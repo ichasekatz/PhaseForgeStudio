@@ -1632,7 +1632,13 @@ function _applyWorkspaceView(workspace) {
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
   if (benchmarkView) benchmarkView.style.display = workspace === "benchmark" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
-  if (workspace === "blade") iframe.src = "/blade/";
+  if (workspace === "blade") {
+    iframe.src = "/blade/";
+    iframe.onload = function() {
+      // Send PFS config to BLADE iframe after load for config bridge
+      try { iframe.contentWindow.postMessage({type: "pfs-config", data: cfg}, "*"); } catch {}
+    };
+  }
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
   if (workspace === "paipai") initPaipaiWorkspace();
   if (workspace === "orchid") initOrchidWorkspace();
