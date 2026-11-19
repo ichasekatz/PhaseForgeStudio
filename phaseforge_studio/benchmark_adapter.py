@@ -139,6 +139,7 @@ class BenchmarkRun:
     energy_result: dict[str, Any] | None = None
     stability_result: dict[str, Any] | None = None
     report_paths: dict[str, str] = field(default_factory=dict)
+    ranking: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +490,32 @@ def _orchestrate(run: BenchmarkRun) -> None:
         except Exception:
             pass
 
+    # Build ranking from all available metric sources
+    try:
+        from phaseforge_studio.benchmark_ranking import rank_mlips  # noqa: PLC0415
+        per_mlip_rank: dict[str, Any] = {}
+        for mlip, job in run.mlip_jobs.items():
+            entry: dict[str, Any] = {}
+            if job.elapsed_s is not None:
+                entry["runtime_s"] = job.elapsed_s
+            if job.metrics and job.metrics.get("available"):
+                cls = job.metrics.get("classification", {})
+                bnd = job.metrics.get("boundary", {})
+                if cls.get("f1") is not None:
+                    entry["f1"] = cls["f1"]
+                if bnd.get("mad_t") is not None:
+                    entry["mad_t"] = bnd["mad_t"]
+            if run.energy_result and run.energy_result.get("mlips", {}).get(mlip):
+                em = run.energy_result["mlips"][mlip]
+                if em.get("energy_mae") is not None:
+                    entry["energy_mae"] = em["energy_mae"]
+                if em.get("force_mae") is not None:
+                    entry["force_mae"] = em["force_mae"]
+            per_mlip_rank[mlip] = entry
+        run.ranking = rank_mlips(per_mlip_rank)
+    except Exception:
+        run.ranking = []
+
     if run.cancel_flag.is_set():
         run.state = "canceled"
     elif any_error:
@@ -615,6 +642,7 @@ def get_benchmark_status(benchmark_id: str) -> dict[str, Any] | None:
         "energy_result": run.energy_result,
         "stability_result": run.stability_result,
         "report_paths": run.report_paths,
+        "ranking": run.ranking,
     }
 
 

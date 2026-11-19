@@ -314,6 +314,138 @@ def boundary_metrics(
 
 
 # ---------------------------------------------------------------------------
+# Confusion matrix
+# ---------------------------------------------------------------------------
+
+
+def confusion_matrix(
+    pred_grid: dict[str, Any],
+    ref_grid: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a phase confusion matrix between prediction and reference grids.
+
+    Args:
+        pred_grid (dict[str, Any]): Output of ``compute_phase_grid`` for the
+            predicted TDB.
+        ref_grid (dict[str, Any]): Output of ``compute_phase_grid`` for the
+            reference TDB.
+
+    Returns:
+        Dict with ``available`` (bool), ``classes`` (list[str]),
+        ``matrix`` (list[list[int]]), ``per_class`` (dict of per-phase TP/FP/FN
+        and precision/recall/F1).  Returns ``{"available": False}`` on failure.
+    """
+    if not pred_grid or not ref_grid:
+        return {"available": False, "error": "Missing grid(s)"}
+
+    pred_phases = pred_grid.get("phase_grid", [])
+    ref_phases = ref_grid.get("phase_grid", [])
+    if not pred_phases or not ref_phases:
+        return {"available": False, "error": "Empty phase grid(s)"}
+
+    n_rows = min(len(pred_phases), len(ref_phases))
+    n_cols = min(
+        min((len(r) for r in pred_phases), default=0),
+        min((len(r) for r in ref_phases), default=0),
+    )
+    if n_rows == 0 or n_cols == 0:
+        return {"available": False, "error": "Zero-size grid"}
+
+    pred_flat = [_normalise_phase(pred_phases[i][j]) for i in range(n_rows) for j in range(n_cols)]
+    ref_flat = [_normalise_phase(ref_phases[i][j]) for i in range(n_rows) for j in range(n_cols)]
+
+    classes = sorted(set(pred_flat) | set(ref_flat))
+    cls_idx = {c: i for i, c in enumerate(classes)}
+    n_cls = len(classes)
+
+    mat = [[0] * n_cls for _ in range(n_cls)]
+    for p, r in zip(pred_flat, ref_flat, strict=True):
+        mat[cls_idx[r]][cls_idx[p]] += 1
+
+    per_class: dict[str, Any] = {}
+    for cls in classes:
+        ci = cls_idx[cls]
+        tp = mat[ci][ci]
+        fp = sum(mat[ri][ci] for ri in range(n_cls) if ri != ci)
+        fn = sum(mat[ci][pi] for pi in range(n_cls) if pi != ci)
+        prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        per_class[cls] = {"tp": tp, "fp": fp, "fn": fn,
+                          "precision": round(prec, 4),
+                          "recall": round(rec, 4),
+                          "f1": round(f1, 4)}
+
+    return {
+        "available": True,
+        "classes": classes,
+        "matrix": mat,
+        "per_class": per_class,
+        "n_points": n_rows * n_cols,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Invariant reaction detection
+# ---------------------------------------------------------------------------
+
+
+def invariant_reactions(
+    grid: dict[str, Any],
+    elements: list[str],
+) -> dict[str, Any]:
+    """Detect invariant reactions (eutectic, peritectic) in a phase grid.
+
+    Scans each temperature row for the presence of three or more distinct
+    phase labels; such rows likely correspond to 3-phase invariant reactions
+    (eutectic, peritectic, eutectoid…).  Also detects large-span phase regions
+    that appear only in a single temperature row (potential zero-width reactions).
+
+    Args:
+        grid (dict[str, Any]): Phase grid from ``compute_phase_grid``.
+        elements (list[str]): Element list (used for labels only).
+
+    Returns:
+        Dict with ``available`` (bool), ``reactions`` (list of dicts with
+        ``temperature``, ``phases``, ``type``, ``n_phase_regions``).
+    """
+    phase_grid = grid.get("phase_grid", [])
+    temps = grid.get("temperatures", [])
+    if not phase_grid or not temps:
+        return {"available": False, "error": "No grid provided"}
+
+    reactions: list[dict[str, Any]] = []
+
+    for i, t_val in enumerate(temps):
+        if i >= len(phase_grid):
+            break
+        row = [_normalise_phase(p) for p in phase_grid[i]]
+        unique_phases = sorted(set(row) - {"UNKNOWN"})
+        n_unique = len(unique_phases)
+        if n_unique < 3:
+            continue
+
+        # Classify based on relative frequency
+        from collections import Counter  # noqa: PLC0415
+        counts = Counter(row)
+        dominant = counts.most_common(1)[0][0]
+        reaction_type = "eutectic" if dominant == "LIQUID" else "peritectic" if "LIQUID" in unique_phases else "eutectoid"
+
+        reactions.append({
+            "temperature": float(t_val),
+            "phases": unique_phases,
+            "type": reaction_type,
+            "n_phase_regions": n_unique,
+        })
+
+    return {
+        "available": True,
+        "reactions": reactions,
+        "n_reactions": len(reactions),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Combined entry point
 # ---------------------------------------------------------------------------
 
@@ -358,11 +490,17 @@ def compute_metrics(
 
         cls_m = classification_metrics(pred_grid, ref_grid)
         bnd_m = boundary_metrics(pred_grid, ref_grid)
+        cm = confusion_matrix(pred_grid, ref_grid)
+        inv_pred = invariant_reactions(pred_grid, elements)
+        inv_ref = invariant_reactions(ref_grid, elements)
 
         return {
             "available": True,
             "classification": cls_m,
             "boundary": bnd_m,
+            "confusion_matrix": cm,
+            "invariant_reactions_pred": inv_pred,
+            "invariant_reactions_ref": inv_ref,
             "error": "",
         }
     except Exception as exc:

@@ -187,7 +187,14 @@ def run_energy_benchmark(
         energy_errs: list[float] = []
         f_energy_errs: list[float] = []
         force_errs: list[float] = []
+        stress_errs: list[float] = []
+        per_composition: list[dict[str, Any]] = []
+        ref_hull_pts: list[tuple[float, float]] = []  # (x_B, E_form_ref)
         n_failed = len(errors)
+
+        # Determine second element for x_B calculation
+        el_list = sorted({el for ref in struct_refs.values() for el in ref.get("composition", {})})
+        el_b = el_list[1] if len(el_list) >= 2 else ""
 
         for struct_key, result in mlip_results.items():
             if result.get("error"):
@@ -197,14 +204,78 @@ def run_energy_benchmark(
                 continue
             pred_epa = result.get("energy_per_atom")
             ref_epa = ref.get("energy_per_atom")
+            comp = ref.get("composition", {})
+            n_total = sum(comp.values()) if comp else 0
+            x_b = comp.get(el_b, 0) / n_total if (n_total > 0 and el_b) else None
+
             if pred_epa is not None and ref_epa is not None:
                 energy_errs.append(abs(pred_epa - ref_epa))
-            comp = ref.get("composition", {})
+
+            pred_eform: float | None = None
+            ref_eform: float | None = None
             if comp and el_refs:
                 pred_eform = _formation_energy(pred_epa, comp, el_refs) if pred_epa is not None else None
                 ref_eform = _formation_energy(ref_epa, comp, el_refs) if ref_epa is not None else None
                 if pred_eform is not None and ref_eform is not None:
                     f_energy_errs.append(abs(pred_eform - ref_eform))
+                if ref_eform is not None and x_b is not None:
+                    ref_hull_pts.append((x_b, ref_eform))
+
+            # Forces
+            pred_forces = result.get("forces")
+            ref_forces = ref.get("forces")
+            if pred_forces and ref_forces and len(pred_forces) == len(ref_forces):
+                try:
+                    flat_errs = [
+                        abs(p_c - r_c)
+                        for p_row, r_row in zip(pred_forces, ref_forces, strict=True)
+                        for p_c, r_c in zip(p_row, r_row, strict=True)
+                    ]
+                    force_errs.extend(flat_errs)
+                except (TypeError, ValueError):
+                    pass
+
+            # Stresses
+            pred_stress = result.get("stress")
+            ref_stress = ref.get("stress")
+            if pred_stress and ref_stress and len(pred_stress) == len(ref_stress):
+                try:
+                    flat_serrs = [
+                        abs(float(p) - float(r))
+                        for p, r in zip(pred_stress, ref_stress, strict=True)
+                    ]
+                    stress_errs.extend(flat_serrs)
+                except (TypeError, ValueError):
+                    pass
+
+            # Per-composition record
+            if x_b is not None:
+                per_composition.append({
+                    "x": x_b,
+                    "energy_error": abs(pred_epa - ref_epa) if pred_epa is not None and ref_epa is not None else None,
+                    "formation_energy_error": abs(pred_eform - ref_eform) if pred_eform is not None and ref_eform is not None else None,
+                    "struct_key": struct_key,
+                })
+
+        # Energy above convex hull (reference hull → interpolate at each pred x)
+        energy_above_hull_errs: list[float] = []
+        if len(ref_hull_pts) >= 2:
+            try:
+                ref_hull_pts_s = sorted(ref_hull_pts, key=lambda t: t[0])
+                hull_x_ref = [p[0] for p in ref_hull_pts_s]
+                hull_g_ref = [p[1] for p in ref_hull_pts_s]
+                for rec in per_composition:
+                    x = rec.get("x")
+                    pred_ef = rec.get("formation_energy_error")
+                    if x is not None and pred_ef is not None:
+                        # Simple linear interpolation of ref hull
+                        try:
+                            hull_val = _interp1d(hull_x_ref, hull_g_ref, x)
+                            energy_above_hull_errs.append(abs(pred_ef - hull_val))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
         def _mae(vals: list[float]) -> float | None:
             return sum(vals) / len(vals) if vals else None
@@ -217,12 +288,17 @@ def run_energy_benchmark(
             "energy_rmse": _rmse(energy_errs),
             "energy_max_ae": max(energy_errs) if energy_errs else None,
             "formation_energy_mae": _mae(f_energy_errs),
+            "mixing_enthalpy_mae": _mae(f_energy_errs),  # same quantity
             "force_mae": _mae(force_errs) if force_errs else None,
+            "force_rmse": _rmse(force_errs) if force_errs else None,
+            "stress_mae": _mae(stress_errs) if stress_errs else None,
+            "energy_above_hull_mae": _mae(energy_above_hull_errs) if energy_above_hull_errs else None,
             "n_structures": len(struct_files),
             "n_evaluated": len(struct_files) - n_failed,
             "n_failed": n_failed,
             "errors": errors[:10],
             "results": mlip_results,
+            "per_composition": per_composition,
         }
 
     return {
@@ -469,6 +545,75 @@ def _spinodal_boundaries(
     }
 
 
+def _interp1d(x_arr: list[float], y_arr: list[float], x: float) -> float:
+    """Linear interpolation at a single point.
+
+    Args:
+        x_arr (list[float]): Sorted x values.
+        y_arr (list[float]): Corresponding y values.
+        x (float): Query x.
+
+    Returns:
+        Interpolated y value; uses nearest endpoint for out-of-range queries.
+    """
+    if x <= x_arr[0]:
+        return y_arr[0]
+    if x >= x_arr[-1]:
+        return y_arr[-1]
+    for i in range(len(x_arr) - 1):
+        if x_arr[i] <= x <= x_arr[i + 1]:
+            t = (x - x_arr[i]) / (x_arr[i + 1] - x_arr[i])
+            return y_arr[i] + t * (y_arr[i + 1] - y_arr[i])
+    return y_arr[-1]
+
+
+def _binodal_from_hull(
+    hull_result: dict[str, Any],
+    *,
+    x_step: float = 0.02,
+) -> dict[str, Any]:
+    """Identify binodal (miscibility gap) boundaries from the convex hull.
+
+    Hull segments that skip over interior compositions (gap larger than
+    ``3 * x_step``) indicate a miscibility gap; each such segment contributes
+    one binodal pair.
+
+    Args:
+        hull_result (dict[str, Any]): Output of ``_convex_hull``.
+        x_step (float): Reference composition step; gaps wider than
+            ``3 * x_step`` are treated as miscibility gaps.
+
+    Returns:
+        Dict with ``available`` (bool), ``binodal_pairs`` (list of dicts with
+        ``x1``, ``g1``, ``x2``, ``g2``), ``n_miscibility_gaps`` (int).
+    """
+    if not hull_result.get("available"):
+        return {"available": False, "error": "Hull not available"}
+
+    hull_x = hull_result.get("hull_x", [])
+    hull_g = hull_result.get("hull_G", [])
+    if len(hull_x) < 2:
+        return {"available": False, "error": "Insufficient hull points"}
+
+    gap_threshold = 3.0 * x_step
+    binodal_pairs: list[dict[str, float]] = []
+
+    for i in range(len(hull_x) - 1):
+        x1, x2 = hull_x[i], hull_x[i + 1]
+        g1, g2 = hull_g[i], hull_g[i + 1]
+        # Skip endpoint-adjacent segments (pure element boundaries)
+        if x1 < gap_threshold or x2 > 1.0 - gap_threshold:
+            continue
+        if (x2 - x1) > gap_threshold:
+            binodal_pairs.append({"x1": x1, "g1": g1, "x2": x2, "g2": g2})
+
+    return {
+        "available": True,
+        "binodal_pairs": binodal_pairs,
+        "n_miscibility_gaps": len(binodal_pairs),
+    }
+
+
 def run_stability_benchmark(
     tdb_map: dict[str, Path],
     elements: list[str],
@@ -507,21 +652,37 @@ def run_stability_benchmark(
             curve = _gibbs_energy_grid(tdb_path, elements, temperature=t_val, n_points=n_grid)
             gibbs_curves[str(int(t_val))] = curve
 
-        # Use first successful temperature for hull/spinodal
+        # Hull/spinodal/binodal per temperature
+        hull_per_temp: dict[str, Any] = {}
+        spinodal_per_temp: dict[str, Any] = {}
+        binodal_per_temp: dict[str, Any] = {}
         hull_result: dict[str, Any] = {}
         spinodal_result: dict[str, Any] = {}
+
         for t_val in temperatures:
-            curve = gibbs_curves.get(str(int(t_val)), {})
-            if curve.get("available") and curve.get("x") and curve.get("G"):
-                hull_result = _convex_hull(curve["x"], curve["G"])
-                spinodal_result = _spinodal_boundaries(curve["x"], curve["G"])
-                break
+            t_key = str(int(t_val))
+            curve = gibbs_curves.get(t_key, {})
+            if not curve.get("available") or not curve.get("x") or not curve.get("G"):
+                continue
+            h = _convex_hull(curve["x"], curve["G"])
+            s = _spinodal_boundaries(curve["x"], curve["G"])
+            b = _binodal_from_hull(h, x_step=0.02)
+            hull_per_temp[t_key] = h
+            spinodal_per_temp[t_key] = s
+            binodal_per_temp[t_key] = b
+            # Keep first successful T for top-level backwards compat keys
+            if not hull_result:
+                hull_result = h
+                spinodal_result = s
 
         per_mlip[mlip] = {
             "available": True,
             "gibbs_curves": gibbs_curves,
             "convex_hull": hull_result,
             "spinodal": spinodal_result,
+            "hull_per_temp": hull_per_temp,
+            "spinodal_per_temp": spinodal_per_temp,
+            "binodal_per_temp": binodal_per_temp,
         }
 
     return {
