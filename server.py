@@ -79,6 +79,28 @@ from phaseforge_studio.blade import (  # noqa: E402
     serve_blade_index,
 )
 from phaseforge_studio.config import _server_dir  # noqa: E402
+from phaseforge_studio.orchid_adapter import (  # noqa: E402
+    check_orchid_mcp,
+    compare_to_dft,
+    get_formation_enthalpy,
+    get_invariant_reactions,
+    get_phase_diagram,
+    get_system_data,
+    get_tdb_content,
+    list_tdb_files,
+    orchid_install_hint,
+    orchid_search_systems,
+)
+from phaseforge_studio.paipai import (  # noqa: E402
+    _paipai,
+    check_paipai_installed,
+    get_paipai_progress,
+    run_paipai,
+    scan_paipai_outputs,
+    stop_paipai,
+    struc_in_from_poscar,
+    write_struc_in,
+)
 
 
 class _PfState:
@@ -538,7 +560,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid JSON"}, 400)
                 return
             workspace = body.get("workspace", "mf")
-            if workspace not in ("pf", "mf", "phaseforge", "blade"):
+            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
@@ -621,6 +643,284 @@ class StudioHandler(BaseHTTPRequestHandler):
             tdb_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.tdb"))
             png_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.png"))
             self._json({"tdb": tdb_files, "png": png_files})
+
+        # ── PAIPAI endpoints ─────────────────────────────────────────────────
+        elif path == "/api/paipai_status":
+            wd = _paipai.workdir
+            progress: dict[str, Any] = {}
+            if wd and wd.is_dir():
+                try:
+                    progress = get_paipai_progress(wd)
+                except Exception:
+                    pass
+            self._json({
+                "state": _paipai.state,
+                "installed": check_paipai_installed(),
+                "log_tail": _paipai.log[-60:],
+                "progress": progress,
+            })
+
+        elif path == "/api/paipai_run":
+            if _paipai.state == "running":
+                self._json({"error": "PAIPAI already running"}, 409)
+                return
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            workdir_str = body.get("workdir") or self.cfg.get("paipai_workdir", "")
+            if not workdir_str:
+                self._json({"error": "paipai_workdir not set"}, 400)
+                return
+            workdir = Path(workdir_str).expanduser().resolve()
+            # Validate path is not system-sensitive
+            if str(workdir).startswith("/etc") or str(workdir).startswith("/usr"):
+                self._json({"error": "invalid workdir"}, 400)
+                return
+            # Build struc.in from request or existing POSCAR
+            poscar_text = body.get("poscar_text", "")
+            if poscar_text:
+                try:
+                    struc_in_from_poscar(
+                        workdir=workdir,
+                        poscar_text=poscar_text,
+                        lattice_name=body.get("lattice_name", self.cfg.get("paipai_lattice_name", "FCC")),
+                        interstitial_elements=body.get("interstitial_elements") or self.cfg.get("paipai_interstitial_elements", []),
+                        interstitial_counts=body.get("interstitial_counts") or self.cfg.get("paipai_interstitial_counts", []),
+                    )
+                except Exception as exc:
+                    self._json({"error": f"struc.in generation failed: {exc}"}, 400)
+                    return
+            elif not (workdir / "struc.in").exists():
+                self._json({"error": "struc.in not found and no poscar_text supplied"}, 400)
+                return
+            # Save config
+            for key in ("workdir", "lattice_name", "model", "device", "fast", "slow",
+                        "steps", "temperature", "pool_cap"):
+                cfg_key = f"paipai_{key}"
+                if key in body:
+                    self.cfg[cfg_key] = body[key]
+            StudioHandler.cfg = self.cfg
+            _save_config(self.config_path, self.cfg)
+            _paipai.reset()
+            threading.Thread(
+                target=run_paipai,
+                args=(
+                    workdir,
+                    body.get("model", self.cfg.get("paipai_model", "GRACE-2L-OMAT")),
+                    body.get("device", self.cfg.get("paipai_device", "cpu")),
+                    int(body.get("fast", self.cfg.get("paipai_fast", 15))),
+                    int(body.get("slow", self.cfg.get("paipai_slow", 15))),
+                    int(body.get("steps", self.cfg.get("paipai_steps", 2000))),
+                    float(body.get("temperature", self.cfg.get("paipai_temperature", 0.001))),
+                    int(body.get("pool_cap", self.cfg.get("paipai_pool_cap", 128))),
+                    _paipai,
+                ),
+                daemon=True,
+            ).start()
+            self._json({"ok": True, "state": "running"})
+
+        elif path == "/api/paipai_stop":
+            stop_paipai(_paipai)
+            self._json({"ok": True})
+
+        elif path == "/api/paipai_outputs":
+            workdir_str = self.cfg.get("paipai_workdir", "")
+            if not workdir_str:
+                self._json({"outputs": [], "installed": check_paipai_installed()})
+                return
+            workdir = Path(workdir_str).expanduser().resolve()
+            outputs = scan_paipai_outputs(workdir) if workdir.is_dir() else []
+            self._json({"outputs": outputs, "installed": check_paipai_installed()})
+
+        elif path == "/api/paipai_write_struc":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            workdir_str = body.get("workdir") or self.cfg.get("paipai_workdir", "")
+            if not workdir_str:
+                self._json({"error": "paipai_workdir not set"}, 400)
+                return
+            workdir = Path(workdir_str).expanduser().resolve()
+            try:
+                p = write_struc_in(
+                    workdir=workdir,
+                    lattice_name=body.get("lattice_name", "FCC"),
+                    scale=float(body.get("scale", 1.0)),
+                    lattice_vectors=body.get("lattice_vectors", [[3.52,0,0],[0,3.52,0],[0,0,3.52]]),
+                    host_elements=body.get("host_elements", ["Ni"]),
+                    host_counts=[int(x) for x in body.get("host_counts", [1])],
+                    interstitial_elements=body.get("interstitial_elements", []),
+                    interstitial_counts=[int(x) for x in body.get("interstitial_counts", [])],
+                    coords=[(c[0], c[1], c[2], c[3]) for c in body.get("coords", [[0,0,0,"Ni"]])],
+                    coord_type=body.get("coord_type", "Shuffle"),
+                )
+                self._json({"ok": True, "path": str(p)})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 400)
+
+        # ── ORCHID endpoints ─────────────────────────────────────────────────
+        elif path == "/api/orchid/status":
+            self._json({
+                "mcp_available": check_orchid_mcp(),
+                "hint": orchid_install_hint() if not check_orchid_mcp() else None,
+            })
+
+        elif path == "/api/orchid/search":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            elements = body.get("elements", [])
+            if not elements:
+                self._json({"error": "elements required"}, 400)
+                return
+            try:
+                results = orchid_search_systems(
+                    elements=elements,
+                    exact=body.get("exact", False),
+                    limit=int(body.get("limit", 50)),
+                )
+                self._json({"results": results})
+            except Exception as exc:
+                self._json({"error": str(exc), "results": []})
+
+        elif path == "/api/orchid/system":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            system = body.get("system", "")
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                data = get_system_data(
+                    system=system,
+                    property_group=body.get("property_group"),
+                    evidence_class=body.get("evidence_class"),
+                )
+                self._json(data)
+            except Exception as exc:
+                self._json({"error": str(exc), "system": system})
+
+        elif path == "/api/orchid/phase_diagram":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            system = body.get("system", "")
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                data = get_phase_diagram(
+                    system=system,
+                    x_arr=body.get("x"),
+                    t_arr=body.get("T"),
+                )
+                self._json(data)
+            except Exception as exc:
+                self._json({"error": str(exc), "system": system})
+
+        elif path == "/api/orchid/formation_enthalpy":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            formula = body.get("formula", "")
+            if not formula:
+                self._json({"error": "formula required"}, 400)
+                return
+            try:
+                self._json(get_formation_enthalpy(formula))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/orchid/tdb_list":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                body = {}
+            try:
+                files = list_tdb_files(
+                    elements=body.get("elements"),
+                    tier=body.get("tier"),
+                )
+                self._json({"files": files})
+            except Exception as exc:
+                self._json({"error": str(exc), "files": []})
+
+        elif path == "/api/orchid/get_tdb":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            file_id = body.get("file_id", "")
+            if not file_id:
+                self._json({"error": "file_id required"}, 400)
+                return
+            content = get_tdb_content(file_id)
+            self._json({"content": content, "file_id": file_id})
+
+        elif path == "/api/orchid/import_tdb":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            content = body.get("content", "")
+            filename = body.get("filename", "orchid_imported.tdb")
+            # Validate filename - no path traversal
+            if "/" in filename or "\\" in filename or ".." in filename:
+                self._json({"error": "invalid filename"}, 400)
+                return
+            save_dir = _resolve(self.cfg, "path1") / "Files"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            dest = save_dir / filename
+            try:
+                dest.write_text(content)
+                self._json({"ok": True, "saved_to": str(dest)})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
+        elif path == "/api/orchid/invariant":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            system = body.get("system", "")
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                self._json({"reactions": get_invariant_reactions(system, body.get("source", "literature"))})
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/orchid/compare_dft":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            system = body.get("system", "")
+            if not system:
+                self._json({"error": "system required"}, 400)
+                return
+            try:
+                self._json(compare_to_dft(system))
+            except Exception as exc:
+                self._json({"error": str(exc)})
 
         elif path == "/api/analyze":
             try:

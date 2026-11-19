@@ -50,6 +50,7 @@ include = ["server.py", "index.html", "config.json.example"]
 
 [tool.ruff]
 line-length = 140
+exclude = ["**/* 2.py", "**/* 2/**"]
 
 [tool.ruff.lint]
 select = [
@@ -75,7 +76,9 @@ ignore = [
     "PLR0912", # too many branches
     "PLR0913", # too many arguments
     "PLR0915", # too many statements
+    "PLR0917", # too many positional arguments
     "PLR2004", # magic value in comparison
+    "SIM105",  # use contextlib.suppress
 ]
 
 [tool.ruff.format]

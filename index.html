@@ -447,6 +447,8 @@ select option { background: var(--bg3); }
     <button class="ws-tab active" id="ws-tab-pf" onclick="switchWorkspace('pf')">PhaseForge</button>
     <button class="ws-tab" id="ws-tab-mf" onclick="switchWorkspace('mf')">Materials Framework</button>
     <button class="ws-tab" id="ws-tab-blade" onclick="switchWorkspace('blade')">BLADE</button>
+    <button class="ws-tab" id="ws-tab-paipai" onclick="switchWorkspace('paipai')">PAIPAI</button>
+    <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid')">ORCHID</button>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
   <div class="status-pill" onclick="toggleJobHistory()" title="Click to show job history" style="cursor:pointer;">
@@ -563,6 +565,199 @@ select option { background: var(--bg3); }
     <div id="pf-png-list" style="display:flex;flex-direction:column;gap:6px;"></div>
   </div>
 
+</div>
+
+<!-- ── PAIPAI workspace ──────────────────────────────────────── -->
+<div id="paipai-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+
+  <!-- Left: configure -->
+  <div id="paipai-cfg" style="width:260px;min-width:180px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:0;display:flex;flex-direction:column;">
+    <div class="panel-title">Configure PAIPAI</div>
+    <div id="paipai-not-installed" style="display:none;padding:12px;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);border-radius:4px;margin:10px;font-size:11px;color:var(--red);white-space:pre-wrap;"></div>
+    <div class="section">
+      <div class="section-label">Work Directory</div>
+      <div class="path-field">
+        <input id="paipai-workdir" type="text" placeholder="/path/to/workdir" oninput="savePaipaiConfig()">
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-label">Lattice Name</div>
+      <input id="paipai-lattice" type="text" value="FCC" oninput="savePaipaiConfig()">
+    </div>
+    <div class="section">
+      <div class="section-label">Host Elements &amp; Counts</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+        <input id="paipai-host-elements" type="text" placeholder="Cr Fe" style="flex:1" oninput="savePaipaiConfig()">
+        <input id="paipai-host-counts" type="text" placeholder="8 8" style="flex:1" oninput="savePaipaiConfig()">
+      </div>
+      <div style="font-size:10px;color:var(--text2);">space-separated elements / counts</div>
+    </div>
+    <div class="section">
+      <div class="section-label">Interstitial Species &amp; Counts</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
+        <input id="paipai-interstitial-elements" type="text" placeholder="C (optional)" style="flex:1" oninput="savePaipaiConfig()">
+        <input id="paipai-interstitial-counts" type="text" placeholder="1" style="flex:1" oninput="savePaipaiConfig()">
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-label">MLIP Model</div>
+      <input id="paipai-model" type="text" value="GRACE-2L-OMAT" oninput="savePaipaiConfig()">
+    </div>
+    <div class="section">
+      <div class="section-label">Device</div>
+      <select id="paipai-device" onchange="savePaipaiConfig()">
+        <option value="cpu">cpu</option>
+        <option value="cuda">cuda</option>
+      </select>
+    </div>
+    <div class="section">
+      <div class="section-label">MC Parameters</div>
+      <div class="field"><label>Steps</label><input id="paipai-steps" type="number" value="2000" min="1" oninput="savePaipaiConfig()"></div>
+      <div class="field"><label>Temperature (eV)</label><input id="paipai-temperature" type="number" value="0.001" step="0.0001" oninput="savePaipaiConfig()"></div>
+      <div class="field"><label>Fast workers</label><input id="paipai-fast" type="number" value="15" min="1" oninput="savePaipaiConfig()"></div>
+      <div class="field"><label>Slow workers</label><input id="paipai-slow" type="number" value="15" min="1" oninput="savePaipaiConfig()"></div>
+      <div class="field"><label>Pool capacity</label><input id="paipai-pool-cap" type="number" value="128" min="1" oninput="savePaipaiConfig()"></div>
+    </div>
+    <div class="section">
+      <div class="section-label">Import Structure (optional POSCAR)</div>
+      <textarea id="paipai-poscar" rows="4" placeholder="Paste POSCAR/CONTCAR here to generate struc.in automatically…"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:10px;padding:4px 6px;resize:vertical;"></textarea>
+      <button class="btn" style="margin-top:4px;width:100%;" onclick="paipaiWriteStrucIn()">Write struc.in</button>
+    </div>
+    <div style="padding:10px;display:flex;gap:6px;">
+      <button class="btn primary" id="paipai-run-btn" onclick="runPaipai()" style="flex:1;">Run</button>
+      <button class="btn danger" id="paipai-stop-btn" onclick="stopPaipai()" disabled style="flex:1;">Stop</button>
+    </div>
+  </div>
+
+  <!-- Center: log -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span style="font-size:11px;color:var(--text2);">Status:</span>
+      <span id="paipai-state-badge" style="font-family:var(--font);font-size:11px;color:var(--accent);">idle</span>
+      <span id="paipai-progress-text" style="font-family:var(--font);font-size:10px;color:var(--text2);margin-left:8px;"></span>
+      <div style="flex:1;"></div>
+      <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="clearPaipaiLog()">Clear</button>
+    </div>
+    <div id="paipai-log" style="flex:1;font-family:var(--font);font-size:10px;color:var(--text);line-height:1.6;overflow-y:auto;padding:10px 14px;white-space:pre-wrap;word-break:break-all;"></div>
+    <!-- Energy chart for MC progress -->
+    <div id="paipai-chart-wrap" style="height:160px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;position:relative;">
+      <canvas id="paipai-energy-chart"></canvas>
+      <div id="paipai-chart-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:11px;">No results yet</div>
+    </div>
+  </div>
+
+  <!-- Right: results -->
+  <div style="width:280px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;">
+    <div class="panel-title" style="display:flex;align-items:center;">
+      <span style="flex:1;">Results</span>
+      <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="loadPaipaiOutputs()">↻</button>
+    </div>
+    <div id="paipai-results-list" style="flex:1;padding:8px;"></div>
+    <div style="padding:8px;border-top:1px solid var(--border);">
+      <button class="btn" style="width:100%;font-size:11px;" onclick="paipaiSendToMF()" title="Send best structure to Materials Framework for further analysis">Send Best → MF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ORCHID workspace ───────────────────────────────────────── -->
+<div id="orchid-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+
+  <!-- Left: search -->
+  <div id="orchid-search-pane" style="width:260px;min-width:180px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;">
+    <div class="panel-title">ORCHID Search</div>
+    <div id="orchid-not-available" style="display:none;padding:12px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);border-radius:4px;margin:10px;font-size:11px;color:var(--accent2);white-space:pre-wrap;"></div>
+    <div class="section">
+      <div class="section-label">Elements</div>
+      <input id="orchid-elements" type="text" placeholder="Al Fe" oninput="updateOrchidSystem()">
+      <div style="font-size:10px;color:var(--text2);margin-top:3px;">space-separated, builds binary system</div>
+    </div>
+    <div class="section">
+      <div class="section-label">System</div>
+      <input id="orchid-system" type="text" placeholder="Al-Fe" oninput="savePaipaiConfig()">
+      <button class="btn" style="margin-top:6px;width:100%;" onclick="orchidSearch()">Search</button>
+    </div>
+    <div class="section">
+      <div class="section-label">Data Type</div>
+      <select id="orchid-property-group" style="width:100%;">
+        <option value="">All</option>
+        <option value="HM_FORM">Formation Enthalpy</option>
+        <option value="LIQUIDUS">Liquidus</option>
+        <option value="SOLIDUS">Solidus</option>
+        <option value="T_TRANSITION">Transition Temperature</option>
+      </select>
+    </div>
+    <div class="section">
+      <div class="section-label">Evidence Class</div>
+      <select id="orchid-evidence-class" style="width:100%;">
+        <option value="">All</option>
+        <option value="experimental">Experimental</option>
+        <option value="calculated">Calculated</option>
+        <option value="assessed">Assessed</option>
+      </select>
+    </div>
+    <div class="section" style="display:flex;flex-direction:column;gap:4px;">
+      <button class="btn" style="width:100%;" onclick="orchidLoadSystemData()">Load System Data</button>
+      <button class="btn" style="width:100%;" onclick="orchidLoadPhaseDiagram()">Load Phase Diagram</button>
+      <button class="btn" style="width:100%;" onclick="orchidLoadInvariant()">Invariant Reactions</button>
+      <button class="btn" style="width:100%;" onclick="orchidCompareDFT()">Compare to DFT</button>
+    </div>
+    <!-- TDB section -->
+    <div class="section">
+      <div class="section-label">TDB Databases</div>
+      <button class="btn" style="width:100%;margin-bottom:6px;" onclick="orchidListTdbs()">List TDBs</button>
+      <div id="orchid-tdb-list" style="font-family:var(--font);font-size:10px;max-height:160px;overflow-y:auto;"></div>
+    </div>
+    <!-- Import to MF -->
+    <div class="section">
+      <button class="btn primary" style="width:100%;" onclick="orchidImportTdb()" id="orchid-import-btn" disabled>Import Selected TDB → MF</button>
+    </div>
+  </div>
+
+  <!-- Center: data display -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);">
+    <div style="display:flex;gap:6px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;">
+      <button class="energy-tab-btn active" id="otab-data" onclick="switchOrchidTab('data')">Data Table</button>
+      <button class="energy-tab-btn" id="otab-diagram" onclick="switchOrchidTab('diagram')">Phase Diagram</button>
+      <button class="energy-tab-btn" id="otab-tdb" onclick="switchOrchidTab('tdb')">TDB Preview</button>
+      <span id="orchid-system-label" style="font-family:var(--font);font-size:11px;color:var(--accent);margin-left:8px;"></span>
+      <div style="flex:1;"></div>
+      <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="clearOrchidView()">Clear</button>
+    </div>
+
+    <!-- Data table tab -->
+    <div id="orchid-tab-data" style="flex:1;overflow-y:auto;padding:10px;">
+      <div id="orchid-status-msg" style="color:var(--text2);font-size:12px;padding:20px;text-align:center;">Search for a system to load data.</div>
+      <table id="orchid-data-table" style="width:100%;border-collapse:collapse;font-family:var(--font);font-size:11px;display:none;">
+        <thead id="orchid-data-thead" style="background:var(--bg2);"></thead>
+        <tbody id="orchid-data-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Phase diagram tab -->
+    <div id="orchid-tab-diagram" style="flex:1;overflow:hidden;display:none;flex-direction:column;">
+      <div id="orchid-diagram-wrap" style="flex:1;padding:12px;min-height:0;position:relative;">
+        <canvas id="orchid-diagram-chart"></canvas>
+        <div id="orchid-diagram-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:12px;">No phase diagram loaded</div>
+      </div>
+    </div>
+
+    <!-- TDB preview tab -->
+    <div id="orchid-tab-tdb" style="flex:1;overflow:hidden;display:none;flex-direction:column;">
+      <div id="orchid-tdb-preview" style="flex:1;font-family:var(--font);font-size:10px;color:var(--text);overflow-y:auto;padding:12px;white-space:pre;"></div>
+    </div>
+  </div>
+
+  <!-- Right: comparison / citations -->
+  <div style="width:260px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;">
+    <div class="panel-title">Citations &amp; Provenance</div>
+    <div id="orchid-citations" style="flex:1;padding:8px;font-family:var(--font);font-size:10px;color:var(--text);"></div>
+    <div style="padding:8px;border-top:1px solid var(--border);">
+      <div class="section-label" style="margin-bottom:6px;">Compare with PhaseForge</div>
+      <input id="orchid-compare-tdb" type="text" placeholder="path/to/generated.tdb">
+      <button class="btn" style="margin-top:4px;width:100%;" onclick="orchidCompareWithLocal()">Compare</button>
+    </div>
+  </div>
 </div>
 
 <!-- Edge expand buttons (shown when panel collapsed) -->
@@ -960,14 +1155,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade" };
+  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid" };
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE" };
+    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -990,13 +1185,19 @@ function _applyWorkspaceView(workspace) {
   const iframe = document.getElementById("blade-frame");
   const panels = document.getElementById("pf-panels");
   const pfView = document.getElementById("pf-view");
+  const paipaiView = document.getElementById("paipai-view");
+  const orchidView = document.getElementById("orchid-view");
   if (!iframe || !panels || !pfView) return;
   panels.style.display = workspace === "mf" ? "flex" : "none";
   iframe.style.display = workspace === "blade" ? "flex" : "none";
   pfView.style.display = workspace === "pf" ? "flex" : "none";
+  if (paipaiView) paipaiView.style.display = workspace === "paipai" ? "flex" : "none";
+  if (orchidView) orchidView.style.display = workspace === "orchid" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
   if (workspace === "blade") iframe.src = "/blade/";
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
+  if (workspace === "paipai") initPaipaiWorkspace();
+  if (workspace === "orchid") initOrchidWorkspace();
 }
 
 // ── PhaseForge (sqscal) workspace ──────────────────────────
@@ -2810,6 +3011,606 @@ function _initMfHandles() {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   });
+}
+
+// ── PAIPAI workspace ────────────────────────────────────────
+
+let _paipaiPollTimer = null;
+let _paipaiEnergyChart = null;
+
+function initPaipaiWorkspace() {
+  loadPaipaiConfig();
+  checkPaipaiStatus();
+}
+
+function loadPaipaiConfig() {
+  const c = cfg;
+  if (c.paipai_workdir) document.getElementById("paipai-workdir").value = c.paipai_workdir;
+  if (c.paipai_lattice_name) document.getElementById("paipai-lattice").value = c.paipai_lattice_name;
+  if (c.paipai_model) document.getElementById("paipai-model").value = c.paipai_model;
+  if (c.paipai_device) document.getElementById("paipai-device").value = c.paipai_device;
+  if (c.paipai_steps != null) document.getElementById("paipai-steps").value = c.paipai_steps;
+  if (c.paipai_temperature != null) document.getElementById("paipai-temperature").value = c.paipai_temperature;
+  if (c.paipai_fast != null) document.getElementById("paipai-fast").value = c.paipai_fast;
+  if (c.paipai_slow != null) document.getElementById("paipai-slow").value = c.paipai_slow;
+  if (c.paipai_pool_cap != null) document.getElementById("paipai-pool-cap").value = c.paipai_pool_cap;
+  if (c.paipai_host_elements) document.getElementById("paipai-host-elements").value = Array.isArray(c.paipai_host_elements) ? c.paipai_host_elements.join(" ") : c.paipai_host_elements;
+  if (c.paipai_host_counts) document.getElementById("paipai-host-counts").value = Array.isArray(c.paipai_host_counts) ? c.paipai_host_counts.join(" ") : c.paipai_host_counts;
+  if (c.paipai_interstitial_elements) document.getElementById("paipai-interstitial-elements").value = Array.isArray(c.paipai_interstitial_elements) ? c.paipai_interstitial_elements.join(" ") : c.paipai_interstitial_elements;
+  if (c.paipai_interstitial_counts) document.getElementById("paipai-interstitial-counts").value = Array.isArray(c.paipai_interstitial_counts) ? c.paipai_interstitial_counts.join(" ") : c.paipai_interstitial_counts;
+}
+
+function savePaipaiConfig() {
+  cfg.paipai_workdir = document.getElementById("paipai-workdir").value.trim();
+  cfg.paipai_lattice_name = document.getElementById("paipai-lattice").value.trim();
+  cfg.paipai_model = document.getElementById("paipai-model").value.trim();
+  cfg.paipai_device = document.getElementById("paipai-device").value;
+  cfg.paipai_steps = parseInt(document.getElementById("paipai-steps").value) || 2000;
+  cfg.paipai_temperature = parseFloat(document.getElementById("paipai-temperature").value) || 0.001;
+  cfg.paipai_fast = parseInt(document.getElementById("paipai-fast").value) || 15;
+  cfg.paipai_slow = parseInt(document.getElementById("paipai-slow").value) || 15;
+  cfg.paipai_pool_cap = parseInt(document.getElementById("paipai-pool-cap").value) || 128;
+  cfg.paipai_host_elements = document.getElementById("paipai-host-elements").value.trim().split(/\s+/).filter(Boolean);
+  cfg.paipai_host_counts = document.getElementById("paipai-host-counts").value.trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+  cfg.paipai_interstitial_elements = document.getElementById("paipai-interstitial-elements").value.trim().split(/\s+/).filter(Boolean);
+  cfg.paipai_interstitial_counts = document.getElementById("paipai-interstitial-counts").value.trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+  saveConfig();
+}
+
+async function checkPaipaiStatus() {
+  try {
+    const r = await fetch("/api/paipai_status");
+    const d = await r.json();
+    _updatePaipaiState(d);
+    const hint = document.getElementById("paipai-not-installed");
+    if (hint) hint.style.display = d.installed ? "none" : "block";
+    if (hint && !d.installed) hint.textContent = d.hint || "PAIPAI not found on PATH.";
+  } catch (e) {
+    _appendPaipaiLog("[ui] Status check failed: " + e);
+  }
+}
+
+function _updatePaipaiState(d) {
+  const badge = document.getElementById("paipai-state-badge");
+  const runBtn = document.getElementById("paipai-run-btn");
+  const stopBtn = document.getElementById("paipai-stop-btn");
+  const progText = document.getElementById("paipai-progress-text");
+  if (!badge) return;
+  const state = d.state || "idle";
+  badge.textContent = state;
+  badge.style.color = state === "running" ? "var(--green)" : state === "error" ? "var(--red)" : state === "done" ? "var(--accent)" : "var(--text2)";
+  if (runBtn) runBtn.disabled = state === "running";
+  if (stopBtn) stopBtn.disabled = state !== "running";
+  if (progText) {
+    const p = d.progress || {};
+    const ctrs = p.counters || {};
+    const refined = p.n_refined || 0;
+    const parts = [];
+    if (ctrs.accepted != null) parts.push(`accepted: ${ctrs.accepted}`);
+    if (ctrs.proposed != null) parts.push(`proposed: ${ctrs.proposed}`);
+    parts.push(`refined: ${refined}`);
+    progText.textContent = parts.join("  |  ");
+  }
+  if (d.log_tail) d.log_tail.forEach(l => _appendPaipaiLog(l, false));
+}
+
+function _appendPaipaiLog(line, scroll = true) {
+  const el = document.getElementById("paipai-log");
+  if (!el) return;
+  el.textContent += line + "\n";
+  if (scroll) el.scrollTop = el.scrollHeight;
+}
+
+function clearPaipaiLog() {
+  const el = document.getElementById("paipai-log");
+  if (el) el.textContent = "";
+}
+
+function _startPaipaiPoll() {
+  if (_paipaiPollTimer) return;
+  _paipaiPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch("/api/paipai_status");
+      const d = await r.json();
+      _updatePaipaiState(d);
+      if (d.state !== "running") {
+        clearInterval(_paipaiPollTimer);
+        _paipaiPollTimer = null;
+        loadPaipaiOutputs();
+      }
+    } catch {}
+  }, 2000);
+}
+
+async function runPaipai() {
+  savePaipaiConfig();
+  clearPaipaiLog();
+  _appendPaipaiLog("[ui] Starting PAIPAI...");
+  try {
+    const r = await fetch("/api/paipai_run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        workdir: cfg.paipai_workdir,
+        model: cfg.paipai_model,
+        device: cfg.paipai_device,
+        fast_workers: cfg.paipai_fast,
+        slow_workers: cfg.paipai_slow,
+        steps: cfg.paipai_steps,
+        temperature: cfg.paipai_temperature,
+        pool_cap: cfg.paipai_pool_cap,
+      }),
+    });
+    const d = await r.json();
+    if (d.error) { _appendPaipaiLog("[error] " + d.error); return; }
+    _appendPaipaiLog("[ui] Job started.");
+    _startPaipaiPoll();
+    checkPaipaiStatus();
+  } catch (e) {
+    _appendPaipaiLog("[error] " + e);
+  }
+}
+
+async function stopPaipai() {
+  try {
+    await fetch("/api/paipai_stop", {method: "POST"});
+    _appendPaipaiLog("[ui] Stop requested.");
+    checkPaipaiStatus();
+  } catch (e) {
+    _appendPaipaiLog("[error] " + e);
+  }
+}
+
+async function paipaiWriteStrucIn() {
+  const poscar = document.getElementById("paipai-poscar").value.trim();
+  const workdir = document.getElementById("paipai-workdir").value.trim();
+  const lattice = document.getElementById("paipai-lattice").value.trim();
+  const iels = (document.getElementById("paipai-interstitial-elements").value.trim().split(/\s+/).filter(Boolean));
+  const icts = (document.getElementById("paipai-interstitial-counts").value.trim().split(/\s+/).map(Number).filter(n => !isNaN(n)));
+  if (!workdir) { _appendPaipaiLog("[error] Set workdir first."); return; }
+  try {
+    const r = await fetch("/api/paipai_write_struc", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        workdir,
+        lattice_name: lattice || "FCC",
+        poscar: poscar || null,
+        interstitial_elements: iels,
+        interstitial_counts: icts,
+      }),
+    });
+    const d = await r.json();
+    if (d.error) { _appendPaipaiLog("[error] " + d.error); return; }
+    _appendPaipaiLog("[ui] struc.in written to " + d.path);
+  } catch (e) {
+    _appendPaipaiLog("[error] " + e);
+  }
+}
+
+async function loadPaipaiOutputs() {
+  const workdir = document.getElementById("paipai-workdir").value.trim();
+  if (!workdir) return;
+  try {
+    const r = await fetch("/api/paipai_outputs?workdir=" + encodeURIComponent(workdir));
+    const d = await r.json();
+    _renderPaipaiResults(d.results || []);
+  } catch {}
+}
+
+function _renderPaipaiResults(results) {
+  const list = document.getElementById("paipai-results-list");
+  const empty = document.getElementById("paipai-chart-empty");
+  if (!list) return;
+  if (!results.length) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:11px;padding:10px;">No results yet.</div>';
+    if (empty) empty.style.display = "flex";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+  list.innerHTML = results.map((r, i) => {
+    const e = r.energy != null ? r.energy.toFixed(5) + " eV" : "—";
+    const src = r.source || "";
+    const tid = r.task_id || "";
+    const hasCar = r.has_contcar ? `<button class="btn" style="font-size:9px;padding:1px 5px;" onclick="paipaiSendStructure('${i}')">→MF</button>` : "";
+    return `<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid var(--border);font-size:10px;">
+      <span style="flex:1;font-family:var(--font);color:var(--text);">${tid}</span>
+      <span style="color:var(--accent2);font-family:var(--font);">${e}</span>
+      <span style="color:var(--text2);font-size:9px;">${src}</span>
+      ${hasCar}
+    </div>`;
+  }).join("");
+  // Update energy chart
+  const energies = results.filter(r => r.energy != null).map((r, i) => ({x: i, y: r.energy}));
+  _updatePaipaiEnergyChart(energies);
+}
+
+function _updatePaipaiEnergyChart(points) {
+  const canvas = document.getElementById("paipai-energy-chart");
+  if (!canvas) return;
+  if (_paipaiEnergyChart) { _paipaiEnergyChart.destroy(); _paipaiEnergyChart = null; }
+  if (!points.length) return;
+  _paipaiEnergyChart = new Chart(canvas, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: "Energy (eV)",
+        data: points,
+        pointRadius: 3,
+        pointBackgroundColor: "var(--accent)",
+        showLine: true,
+        borderColor: "var(--accent)",
+        borderWidth: 1,
+        fill: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: "Result #", color: "var(--text2)" }, ticks: { color: "var(--text2)" }, grid: { color: "rgba(255,255,255,0.05)" } },
+        y: { title: { display: true, text: "Energy (eV)", color: "var(--text2)" }, ticks: { color: "var(--text2)" }, grid: { color: "rgba(255,255,255,0.05)" } },
+      },
+    }
+  });
+}
+
+let _paipaiResults = [];
+function paipaiSendStructure(idx) {
+  // Send best CONTCAR to MF viewer — load in mol-viewer via path
+  if (!_paipaiResults[idx]) return;
+  const r = _paipaiResults[idx];
+  if (!r.rel_contcar) return;
+  _appendPaipaiLog("[ui] Loading structure into MF viewer: " + r.rel_contcar);
+  switchWorkspace("mf");
+}
+
+function paipaiSendToMF() {
+  loadPaipaiOutputs().then(() => {
+    const list = document.getElementById("paipai-results-list");
+    if (list && list.children.length) paipaiSendStructure(0);
+  });
+}
+
+// ── ORCHID workspace ────────────────────────────────────────
+
+let _orchidDiagramChart = null;
+let _orchidSelectedTdb = null;
+
+function initOrchidWorkspace() {
+  loadOrchidConfig();
+  checkOrchidStatus();
+}
+
+function loadOrchidConfig() {
+  const c = cfg;
+  if (c.orchid_elements) document.getElementById("orchid-elements").value = Array.isArray(c.orchid_elements) ? c.orchid_elements.join(" ") : c.orchid_elements;
+  if (c.orchid_system) document.getElementById("orchid-system").value = c.orchid_system;
+}
+
+function saveOrchidConfig() {
+  cfg.orchid_elements = document.getElementById("orchid-elements").value.trim().split(/\s+/).filter(Boolean);
+  cfg.orchid_system = document.getElementById("orchid-system").value.trim();
+  saveConfig();
+}
+
+function updateOrchidSystem() {
+  const els = document.getElementById("orchid-elements").value.trim().split(/\s+/).filter(Boolean);
+  if (els.length >= 2) {
+    document.getElementById("orchid-system").value = els.map(e => e.charAt(0).toUpperCase() + e.slice(1).toLowerCase()).sort().join("-");
+  }
+  saveOrchidConfig();
+}
+
+async function checkOrchidStatus() {
+  try {
+    const r = await fetch("/api/orchid/status");
+    const d = await r.json();
+    const hint = document.getElementById("orchid-not-available");
+    if (hint) {
+      if (!d.mcp_available) {
+        hint.style.display = "block";
+        hint.textContent = "orchid-mcp not installed — using HTTP fallback.\nInstall: " + (d.install_hint || "pip install orchid-mcp");
+      } else {
+        hint.style.display = "none";
+      }
+    }
+  } catch {}
+}
+
+function switchOrchidTab(tab) {
+  ["data", "diagram", "tdb"].forEach(t => {
+    const btn = document.getElementById("otab-" + t);
+    const pane = document.getElementById("orchid-tab-" + t);
+    if (btn) btn.classList.toggle("active", t === tab);
+    if (pane) pane.style.display = t === tab ? "flex" : "none";
+  });
+}
+
+function clearOrchidView() {
+  document.getElementById("orchid-status-msg").style.display = "block";
+  document.getElementById("orchid-status-msg").textContent = "Search for a system to load data.";
+  document.getElementById("orchid-data-table").style.display = "none";
+  document.getElementById("orchid-tdb-preview").textContent = "";
+  document.getElementById("orchid-citations").textContent = "";
+  document.getElementById("orchid-system-label").textContent = "";
+  if (_orchidDiagramChart) { _orchidDiagramChart.destroy(); _orchidDiagramChart = null; }
+  document.getElementById("orchid-diagram-empty").style.display = "flex";
+}
+
+async function orchidSearch() {
+  const els = document.getElementById("orchid-elements").value.trim().split(/\s+/).filter(Boolean);
+  const system = document.getElementById("orchid-system").value.trim();
+  const statusMsg = document.getElementById("orchid-status-msg");
+  if (!els.length && !system) { if (statusMsg) statusMsg.textContent = "Enter elements or system."; return; }
+  if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Searching…"; }
+  try {
+    const params = new URLSearchParams();
+    els.forEach(e => params.append("elements", e));
+    if (system) params.set("system", system);
+    const r = await fetch("/api/orchid/search?" + params.toString());
+    const d = await r.json();
+    _renderOrchidSearchResults(d.results || []);
+  } catch (e) {
+    if (statusMsg) statusMsg.textContent = "Search failed: " + e;
+  }
+}
+
+function _renderOrchidSearchResults(results) {
+  const statusMsg = document.getElementById("orchid-status-msg");
+  if (!results.length) {
+    if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "No systems found."; }
+    return;
+  }
+  if (statusMsg) statusMsg.style.display = "none";
+  // Show as table
+  const thead = document.getElementById("orchid-data-thead");
+  const tbody = document.getElementById("orchid-data-tbody");
+  const table = document.getElementById("orchid-data-table");
+  if (!thead || !tbody || !table) return;
+  thead.innerHTML = "<tr><th>System</th><th>Values</th><th></th></tr>";
+  tbody.innerHTML = results.map(r => {
+    const sys = r.system || "";
+    const n = r.n_values != null ? r.n_values : (r.data ? "data" : "—");
+    return `<tr>
+      <td style="font-family:var(--font);padding:3px 8px;">${sys}</td>
+      <td style="font-family:var(--font);padding:3px 8px;">${n}</td>
+      <td style="padding:3px 8px;"><button class="btn" style="font-size:9px;padding:1px 5px;" onclick="orchidLoadSystem('${sys}')">Load</button></td>
+    </tr>`;
+  }).join("");
+  table.style.display = "";
+}
+
+async function orchidLoadSystem(sys) {
+  if (sys) document.getElementById("orchid-system").value = sys;
+  orchidLoadSystemData();
+}
+
+async function orchidLoadSystemData() {
+  const system = document.getElementById("orchid-system").value.trim();
+  if (!system) { return; }
+  const pg = document.getElementById("orchid-property-group").value;
+  const ec = document.getElementById("orchid-evidence-class").value;
+  const statusMsg = document.getElementById("orchid-status-msg");
+  if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Loading…"; }
+  document.getElementById("orchid-system-label").textContent = system;
+  try {
+    const params = new URLSearchParams({system});
+    if (pg) params.set("property_group", pg);
+    if (ec) params.set("evidence_class", ec);
+    const r = await fetch("/api/orchid/system?" + params.toString());
+    const d = await r.json();
+    _renderOrchidSystemData(d);
+    _renderOrchidCitations(d);
+  } catch (e) {
+    if (statusMsg) statusMsg.textContent = "Failed: " + e;
+  }
+}
+
+function _renderOrchidSystemData(d) {
+  const statusMsg = document.getElementById("orchid-status-msg");
+  const table = document.getElementById("orchid-data-table");
+  const thead = document.getElementById("orchid-data-thead");
+  const tbody = document.getElementById("orchid-data-tbody");
+  if (!table) return;
+  if (d.error) {
+    if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Error: " + d.error; }
+    table.style.display = "none";
+    return;
+  }
+  if (statusMsg) statusMsg.style.display = "none";
+  // Flatten data array if present
+  const rows = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : []);
+  if (!rows.length) {
+    if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "No data records."; }
+    table.style.display = "none";
+    return;
+  }
+  const keys = [...new Set(rows.flatMap(r => Object.keys(r)))].filter(k => !["citation", "doi", "ref"].includes(k)).slice(0, 8);
+  thead.innerHTML = "<tr>" + keys.map(k => `<th style="padding:3px 6px;">${k}</th>`).join("") + "</tr>";
+  tbody.innerHTML = rows.slice(0, 200).map(r =>
+    "<tr>" + keys.map(k => `<td style="padding:2px 6px;font-family:var(--font);">${r[k] ?? "—"}</td>`).join("") + "</tr>"
+  ).join("");
+  table.style.display = "";
+}
+
+function _renderOrchidCitations(d) {
+  const el = document.getElementById("orchid-citations");
+  if (!el) return;
+  const rows = Array.isArray(d) ? d : (Array.isArray(d.data) ? d.data : [d]);
+  const seen = new Set();
+  const cites = rows.flatMap(r => {
+    const c = r.citation || r.ref || r.doi || r.source || "";
+    return c ? [c] : [];
+  }).filter(c => { if (seen.has(c)) return false; seen.add(c); return true; });
+  el.innerHTML = cites.length
+    ? cites.map(c => `<div style="margin-bottom:6px;padding:4px 6px;background:var(--bg3);border-radius:3px;">${c}</div>`).join("")
+    : '<div style="color:var(--text2);font-size:11px;padding:10px;">No citation data.</div>';
+}
+
+async function orchidLoadPhaseDiagram() {
+  const system = document.getElementById("orchid-system").value.trim();
+  if (!system) return;
+  switchOrchidTab("diagram");
+  document.getElementById("orchid-system-label").textContent = system;
+  try {
+    const r = await fetch("/api/orchid/phase_diagram?system=" + encodeURIComponent(system));
+    const d = await r.json();
+    _renderOrchidDiagram(d, system);
+  } catch (e) {
+    document.getElementById("orchid-diagram-empty").textContent = "Failed: " + e;
+  }
+}
+
+function _renderOrchidDiagram(d, system) {
+  const empty = document.getElementById("orchid-diagram-empty");
+  const canvas = document.getElementById("orchid-diagram-chart");
+  if (d.error) {
+    if (empty) { empty.style.display = "flex"; empty.textContent = "No diagram: " + d.error; }
+    return;
+  }
+  if (empty) empty.style.display = "none";
+  if (_orchidDiagramChart) { _orchidDiagramChart.destroy(); _orchidDiagramChart = null; }
+  // Expect d.lines or d.data or d.phases array
+  const lines = d.lines || d.data || [];
+  const datasets = lines.map((seg, i) => ({
+    label: seg.label || seg.phase || `Phase ${i+1}`,
+    data: (seg.points || []).map(p => ({x: p[0], y: p[1]})),
+    showLine: true,
+    pointRadius: 1,
+    borderColor: `hsl(${i * 60}, 70%, 60%)`,
+    fill: false,
+  }));
+  if (!datasets.length) {
+    if (empty) { empty.style.display = "flex"; empty.textContent = "No diagram data for " + system; }
+    return;
+  }
+  _orchidDiagramChart = new Chart(canvas, {
+    type: "scatter",
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: "var(--text2)", font: { size: 10 } } } },
+      scales: {
+        x: { title: { display: true, text: "Composition (x)", color: "var(--text2)" }, min: 0, max: 1, ticks: { color: "var(--text2)" }, grid: { color: "rgba(255,255,255,0.05)" } },
+        y: { title: { display: true, text: "Temperature (K)", color: "var(--text2)" }, ticks: { color: "var(--text2)" }, grid: { color: "rgba(255,255,255,0.05)" } },
+      }
+    }
+  });
+}
+
+async function orchidLoadInvariant() {
+  const system = document.getElementById("orchid-system").value.trim();
+  if (!system) return;
+  const statusMsg = document.getElementById("orchid-status-msg");
+  switchOrchidTab("data");
+  if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Loading invariant reactions…"; }
+  try {
+    const r = await fetch("/api/orchid/invariant?system=" + encodeURIComponent(system));
+    const d = await r.json();
+    _renderOrchidSystemData(Array.isArray(d.reactions) ? d.reactions : (Array.isArray(d) ? d : []));
+  } catch (e) {
+    if (statusMsg) statusMsg.textContent = "Failed: " + e;
+  }
+}
+
+async function orchidCompareDFT() {
+  const system = document.getElementById("orchid-system").value.trim();
+  if (!system) return;
+  const statusMsg = document.getElementById("orchid-status-msg");
+  if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Comparing to DFT…"; }
+  try {
+    const r = await fetch("/api/orchid/compare_dft?system=" + encodeURIComponent(system));
+    const d = await r.json();
+    if (d.error) { if (statusMsg) statusMsg.textContent = d.error + (d.hint ? " — " + d.hint : ""); return; }
+    _renderOrchidSystemData(d);
+    _renderOrchidCitations(d);
+  } catch (e) {
+    if (statusMsg) statusMsg.textContent = "Failed: " + e;
+  }
+}
+
+async function orchidListTdbs() {
+  const els = document.getElementById("orchid-elements").value.trim().split(/\s+/).filter(Boolean);
+  const listEl = document.getElementById("orchid-tdb-list");
+  if (listEl) listEl.innerHTML = "Loading…";
+  try {
+    const params = new URLSearchParams();
+    els.forEach(e => params.append("elements", e));
+    const r = await fetch("/api/orchid/tdb_list?" + params.toString());
+    const d = await r.json();
+    const tdbs = d.tdbs || [];
+    if (!listEl) return;
+    if (!tdbs.length) { listEl.textContent = "No TDBs found."; return; }
+    listEl.innerHTML = tdbs.map(t => {
+      const id = t.file_id || t.id || "";
+      const name = t.name || t.system || id;
+      const src = t.source || t.assessment || "";
+      return `<div style="padding:3px 4px;cursor:pointer;border-radius:3px;" onclick="_selectOrchidTdb('${id}')" id="otdb-${id}">
+        <span style="font-weight:600;">${name}</span> <span style="color:var(--text2)">${src}</span>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    if (listEl) listEl.textContent = "Failed: " + e;
+  }
+}
+
+function _selectOrchidTdb(id) {
+  _orchidSelectedTdb = id;
+  document.querySelectorAll("[id^='otdb-']").forEach(el => el.style.background = "");
+  const sel = document.getElementById("otdb-" + id);
+  if (sel) sel.style.background = "var(--bg3)";
+  const btn = document.getElementById("orchid-import-btn");
+  if (btn) btn.disabled = false;
+  orchidPreviewTdb(id);
+}
+
+async function orchidPreviewTdb(id) {
+  switchOrchidTab("tdb");
+  const preview = document.getElementById("orchid-tdb-preview");
+  if (preview) preview.textContent = "Loading…";
+  try {
+    const r = await fetch("/api/orchid/get_tdb?file_id=" + encodeURIComponent(id));
+    const d = await r.json();
+    if (preview) preview.textContent = d.content || d.error || "(empty)";
+  } catch (e) {
+    if (preview) preview.textContent = "Failed: " + e;
+  }
+}
+
+async function orchidImportTdb() {
+  if (!_orchidSelectedTdb) return;
+  const system = document.getElementById("orchid-system").value.trim();
+  try {
+    const r = await fetch("/api/orchid/import_tdb", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({file_id: _orchidSelectedTdb, system}),
+    });
+    const d = await r.json();
+    if (d.error) { alert("Import failed: " + d.error); return; }
+    alert("TDB imported: " + (d.path || d.message || "done"));
+  } catch (e) {
+    alert("Import error: " + e);
+  }
+}
+
+async function orchidCompareWithLocal() {
+  const system = document.getElementById("orchid-system").value.trim();
+  const tdbPath = document.getElementById("orchid-compare-tdb").value.trim();
+  if (!system || !tdbPath) return;
+  const statusMsg = document.getElementById("orchid-status-msg");
+  if (statusMsg) { statusMsg.style.display = "block"; statusMsg.textContent = "Comparing…"; }
+  try {
+    const r = await fetch("/api/orchid/compare_dft?system=" + encodeURIComponent(system));
+    const d = await r.json();
+    _renderOrchidSystemData(d);
+    _renderOrchidCitations(d);
+  } catch (e) {
+    if (statusMsg) statusMsg.textContent = "Compare failed: " + e;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", _initMfHandles);

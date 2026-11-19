@@ -42,6 +42,25 @@ _default_config: dict[str, Any] = {
     "pf_model": "GRACE-2L-OMAT",
     "pf_vib": False,
     "pf_sro": False,
+    # PAIPAI workspace
+    "paipai_workdir": "",
+    "paipai_lattice_name": "FCC",
+    "paipai_model": "GRACE-2L-OMAT",
+    "paipai_device": "cpu",
+    "paipai_fast": 15,
+    "paipai_slow": 15,
+    "paipai_steps": 2000,
+    "paipai_temperature": 0.001,
+    "paipai_pool_cap": 128,
+    "paipai_host_elements": ["Cr", "Fe"],
+    "paipai_host_counts": [8, 8],
+    "paipai_interstitial_elements": [],
+    "paipai_interstitial_counts": [],
+    # ORCHID workspace
+    "orchid_elements": ["Al", "Fe"],
+    "orchid_system": "",
+    "orchid_offline": False,
+    "orchid_data_dir": "",
 }
 
 _fallback_calculators: list[str] = [
