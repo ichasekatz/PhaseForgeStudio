@@ -121,6 +121,13 @@ from phaseforge_studio.pfp_adapter import (  # noqa: E402
     pfp_status,
     supported_methods as _pfp_methods,
 )
+from phaseforge_studio.benchmark_adapter import (  # noqa: E402
+    cancel_benchmark,
+    create_and_launch_benchmark,
+    delete_benchmark,
+    get_benchmark_status,
+    list_benchmarks,
+)
 
 _pfp_job = PfpJob()
 
@@ -612,6 +619,51 @@ class StudioHandler(BaseHTTPRequestHandler):
         elif path == "/api/pfp_methods":
             self._json({"methods": _pfp_methods, "installed": check_pfp_installed()})
 
+        elif path == "/api/benchmark/list":
+            self._json({"benchmarks": list_benchmarks()})
+
+        elif path.startswith("/api/benchmark/status/"):
+            bm_id = path[len("/api/benchmark/status/"):]
+            status = get_benchmark_status(bm_id)
+            if status is None:
+                self._json({"error": "not found"}, 404)
+            else:
+                self._json(status)
+
+        elif path.startswith("/benchmark_file/"):
+            # Serve files from benchmark run directories.
+            # Format: /benchmark_file/<benchmark_id>/<mlip>/<filename>
+            rel = unquote(path[len("/benchmark_file/"):])
+            parts = rel.split("/", 2)
+            if len(parts) < 3:
+                self._json({"error": "invalid path"}, 400)
+                return
+            bm_id, mlip_raw, filename = parts[0], parts[1], parts[2]
+            bm_workdir_str = self.cfg.get("benchmark_workdir", "")
+            if not bm_workdir_str:
+                self._json({"error": "benchmark_workdir not set"}, 400)
+                return
+            bm_base = Path(bm_workdir_str).expanduser().resolve() / "benchmarks"
+            target: Path | None = None
+            if bm_base.is_dir():
+                for d in bm_base.iterdir():
+                    if bm_id in d.name and d.is_dir():
+                        candidate = d / "mlips" / mlip_raw / filename
+                        if candidate.is_file():
+                            target = candidate
+                            break
+                        # Also check phase_diagrams/
+                        candidate2 = d / "phase_diagrams" / filename
+                        if candidate2.is_file():
+                            target = candidate2
+                            break
+            if target is None or not target.is_file():
+                self._json({"error": "not found"}, 404)
+                return
+            ext = target.suffix.lower()
+            mime = {".png": "image/png", ".tdb": "text/plain", ".json": "application/json"}.get(ext, "application/octet-stream")
+            self._serve_file(target, mime)
+
         elif path.startswith("/files/"):
             rel = unquote(path[len("/files/") :])
             full = _resolve(self.cfg, "path1") / rel
@@ -736,7 +788,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid JSON"}, 400)
                 return
             workspace = body.get("workspace", "mf")
-            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid"):
+            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
@@ -1332,6 +1384,44 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)}, 500)
 
+        elif path == "/api/benchmark/create":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            elements = body.get("elements", [])
+            mlips = body.get("mlips", [])
+            phases = body.get("phases", [])
+            workdir_str = body.get("workdir", "") or self.cfg.get("benchmark_workdir", "")
+            if not elements or not mlips or not phases or not workdir_str:
+                self._json({"error": "elements, mlips, phases, and workdir are required"}, 400)
+                return
+            bm_id = create_and_launch_benchmark(
+                elements=elements,
+                mlips=mlips,
+                phases=phases,
+                workdir=workdir_str,
+                level=int(body.get("level", 2)),
+                t_min=float(body.get("t_min", 300.0)),
+                t_max=float(body.get("t_max", 3000.0)),
+                t_step=float(body.get("t_step", 100.0)),
+                x_step=float(body.get("x_step", 0.02)),
+                mode=body.get("mode", "relaxed"),
+                reference_tdb=body.get("reference_tdb", "") or self.cfg.get("benchmark_reference_tdb", ""),
+            )
+            self._json({"ok": True, "benchmark_id": bm_id})
+
+        elif path.startswith("/api/benchmark/cancel/"):
+            bm_id = path[len("/api/benchmark/cancel/"):]
+            ok = cancel_benchmark(bm_id)
+            self._json({"ok": ok})
+
+        elif path.startswith("/api/benchmark/delete/"):
+            bm_id = path[len("/api/benchmark/delete/"):]
+            ok = delete_benchmark(bm_id)
+            self._json({"ok": ok})
+
         else:
             self._json({"error": "not found"}, 404)
 
@@ -1429,6 +1519,7 @@ def main() -> None:
         "blade": "blade_path1",
         "paipai": "paipai_workdir",
         "orchid": "orchid_data_dir",
+        "benchmark": "benchmark_workdir",
     }
     for label, cfg_key in _root_keys.items():
         raw = cfg.get(cfg_key, "")

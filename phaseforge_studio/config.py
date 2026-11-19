@@ -72,6 +72,18 @@ _default_config: dict[str, Any] = {
     "orchid_system": "",
     "orchid_offline": False,
     "orchid_data_dir": "",
+    # Benchmark workspace
+    "benchmark_workdir": "",
+    "benchmark_elements": ["Cu", "Zr"],
+    "benchmark_mlips": ["grace"],
+    "benchmark_phases": ["FCC_A1", "BCC_A2"],
+    "benchmark_level": 2,
+    "benchmark_t_min": 300.0,
+    "benchmark_t_max": 3000.0,
+    "benchmark_t_step": 100.0,
+    "benchmark_x_step": 0.02,
+    "benchmark_mode": "relaxed",
+    "benchmark_reference_tdb": "",
 }
 
 _fallback_calculators: list[str] = [

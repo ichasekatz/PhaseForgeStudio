@@ -450,6 +450,7 @@ select option { background: var(--bg3); }
     <button class="ws-tab" id="ws-tab-paipai" onclick="switchWorkspace('paipai')">PAIPAI</button>
     <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid')">ORCHID</button>
     <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
+    <button class="ws-tab" id="ws-tab-benchmark" onclick="switchWorkspace('benchmark')">Benchmark</button>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
   <div class="status-pill" onclick="toggleJobHistory()" title="Click to show job history" style="cursor:pointer;">
@@ -872,6 +873,128 @@ select option { background: var(--bg3); }
   </div>
 </div>
 
+<!-- ── Benchmark workspace ──────────────────────────────────── -->
+<div id="benchmark-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+  <!-- Left config panel -->
+  <div class="panel" style="width:300px;min-width:240px;max-width:380px;overflow-y:auto;flex-shrink:0;">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:0.95em;">
+      MLIP Phase Diagram Benchmark
+    </div>
+    <div style="padding:10px 14px;">
+
+      <!-- System -->
+      <div class="section-label">Elements</div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);min-height:28px;" id="bm-elements-wrap">
+        <input id="bm-elements-input" type="text" placeholder="Add element…"
+          style="border:none;background:none;outline:none;width:80px;font-size:12px;color:var(--text);"
+          onkeydown="bmHandleElementKey(event)">
+      </div>
+
+      <!-- MLIPs -->
+      <div class="section-label" style="margin-top:8px;">MLIPs to test</div>
+      <div id="bm-mlip-list" style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto;padding:4px 0;">
+        <div style="color:var(--text2);font-size:11px;">Loading…</div>
+      </div>
+
+      <!-- Phases -->
+      <div class="section-label" style="margin-top:8px;">Lattices / Phases</div>
+      <div id="bm-phase-list" style="display:flex;flex-direction:column;gap:3px;"></div>
+
+      <!-- Level + Mode -->
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <div style="flex:1;">
+          <div class="section-label">SQS Level</div>
+          <input id="bm-level-input" type="number" value="2" min="1" max="4" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <div class="section-label">Mode</div>
+          <select id="bm-mode-select" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:12px;">
+            <option value="relaxed">Relaxed (B)</option>
+            <option value="fixed">Fixed (A)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Temperature range -->
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <div style="flex:1;">
+          <div class="section-label">T min (K)</div>
+          <input id="bm-tmin-input" type="number" value="300" step="100" style="width:100%;">
+        </div>
+        <div style="flex:1;">
+          <div class="section-label">T max (K)</div>
+          <input id="bm-tmax-input" type="number" value="3000" step="100" style="width:100%;">
+        </div>
+      </div>
+
+      <!-- Workdir -->
+      <div class="section-label" style="margin-top:8px;">Workdir</div>
+      <div style="display:flex;gap:4px;">
+        <input id="bm-workdir-input" type="text" placeholder="/path/to/workdir" style="flex:1;">
+        <button class="btn" onclick="bmBrowseWorkdir()" title="Browse">…</button>
+      </div>
+
+      <!-- Reference TDB -->
+      <div class="section-label" style="margin-top:8px;">Reference TDB (optional)</div>
+      <div style="display:flex;gap:4px;">
+        <input id="bm-ref-tdb-input" type="text" placeholder="path/to/reference.tdb" style="flex:1;">
+        <button class="btn" onclick="bmBrowseRefTdb()" title="Browse">…</button>
+      </div>
+
+      <!-- Buttons -->
+      <div style="display:flex;gap:6px;margin-top:12px;">
+        <button class="btn btn-run" id="bm-run-btn" onclick="bmRun()" style="flex:1;">▶ Run Benchmark</button>
+        <button class="btn btn-stop" id="bm-cancel-btn" onclick="bmCancel()" style="display:none;">■ Cancel</button>
+      </div>
+
+      <!-- Mode note -->
+      <div id="bm-mode-note" style="color:var(--text2);font-size:10px;margin-top:6px;line-height:1.4;">
+        Mode B: each MLIP independently relaxes the same composition grid via sqscal.
+      </div>
+    </div>
+
+    <!-- Past benchmarks -->
+    <div style="padding:8px 14px;border-top:1px solid var(--border);margin-top:4px;">
+      <div style="font-weight:600;font-size:0.85em;color:var(--text2);margin-bottom:6px;">
+        Past Benchmarks
+        <button class="btn" style="float:right;padding:1px 6px;font-size:10px;" onclick="bmLoadBenchmarkList()">↻</button>
+      </div>
+      <div id="bm-past-list" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- Right results panel -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- View switcher + progress header -->
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;">
+      <span style="font-size:11px;color:var(--text2);font-weight:600;">View:</span>
+      <button class="btn bm-view-btn active" id="bm-view-grid" onclick="bmSetView('grid')">Grid</button>
+      <button class="btn bm-view-btn" id="bm-view-individual" onclick="bmSetView('individual')">Individual</button>
+      <button class="btn bm-view-btn" id="bm-view-overlay" onclick="bmSetView('overlay')">Overlay</button>
+      <div style="flex:1;"></div>
+      <span id="bm-overall-state" style="font-size:11px;font-family:monospace;color:var(--text2);"></span>
+    </div>
+
+    <!-- Active MLIP progress rows -->
+    <div id="bm-progress-panel" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;"></div>
+
+    <!-- Phase diagram grid -->
+    <div style="flex:1;overflow:auto;padding:12px;" id="bm-diagram-area">
+      <div id="bm-phase-grid" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+      <div id="bm-empty-msg" style="color:var(--text2);font-size:13px;text-align:center;padding:40px;">
+        Configure a benchmark and click Run to begin.
+      </div>
+    </div>
+
+    <!-- Metrics table -->
+    <div id="bm-metrics-section" style="display:none;border-top:1px solid var(--border);max-height:220px;overflow-y:auto;flex-shrink:0;">
+      <div style="padding:6px 12px;font-weight:600;font-size:0.85em;color:var(--text2);">Benchmark Metrics</div>
+      <table id="bm-metrics-table" style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace;"></table>
+    </div>
+  </div>
+</div>
+
 <!-- Edge expand buttons (shown when panel collapsed) -->
 <button id="edge-cfg" class="panel-edge-btn" hidden onclick="collapseMfPanel('config')" title="Expand">▶</button>
 <button id="edge-out"  class="panel-edge-btn" hidden onclick="collapseMfPanel('out')"    title="Expand">◀</button>
@@ -1267,14 +1390,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp" };
+  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark" };
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus" };
+    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -1300,6 +1423,7 @@ function _applyWorkspaceView(workspace) {
   const paipaiView = document.getElementById("paipai-view");
   const orchidView = document.getElementById("orchid-view");
   const pfpView = document.getElementById("pfp-view");
+  const benchmarkView = document.getElementById("benchmark-view");
   if (!iframe || !panels || !pfView) return;
   panels.style.display = workspace === "mf" ? "flex" : "none";
   iframe.style.display = workspace === "blade" ? "flex" : "none";
@@ -1307,12 +1431,14 @@ function _applyWorkspaceView(workspace) {
   if (paipaiView) paipaiView.style.display = workspace === "paipai" ? "flex" : "none";
   if (orchidView) orchidView.style.display = workspace === "orchid" ? "flex" : "none";
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
+  if (benchmarkView) benchmarkView.style.display = workspace === "benchmark" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
   if (workspace === "blade") iframe.src = "/blade/";
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
   if (workspace === "paipai") initPaipaiWorkspace();
   if (workspace === "orchid") initOrchidWorkspace();
   if (workspace === "pfp") initPfpWorkspace();
+  if (workspace === "benchmark") initBenchmarkWorkspace();
 }
 
 // ── PhaseForge (sqscal) workspace ──────────────────────────
@@ -3981,6 +4107,421 @@ function pfpUpdateChart() {
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
   ctx.stroke();
+}
+
+// ── MLIP Benchmark workspace ─────────────────────────────────
+
+let _bmActiveBenchmarkId = null;
+let _bmPollTimer = null;
+let _bmElements = ["Cu", "Zr"];
+let _bmSelectedMlips = new Set(["grace"]);
+let _bmSelectedPhases = new Set(["FCC_A1", "BCC_A2"]);
+let _bmViewMode = "grid";
+let _bmSortCol = "mlip";
+let _bmSortAsc = true;
+let _bmLastStatus = null;
+
+const _bmDefaultPhases = ["FCC_A1", "BCC_A2", "HCP_A3", "LIQUID", "BCC_B2", "FCC_L12"];
+
+async function initBenchmarkWorkspace() {
+  bmRenderElementTags();
+  await bmPopulateMlipList();
+  bmRenderPhaseCheckboxes();
+  bmLoadSavedConfig();
+  await bmLoadBenchmarkList();
+}
+
+function bmLoadSavedConfig() {
+  if (cfg.benchmark_elements && cfg.benchmark_elements.length) {
+    _bmElements = [...cfg.benchmark_elements];
+    bmRenderElementTags();
+  }
+  if (cfg.benchmark_mlips && cfg.benchmark_mlips.length) {
+    _bmSelectedMlips = new Set(cfg.benchmark_mlips);
+  }
+  if (cfg.benchmark_phases && cfg.benchmark_phases.length) {
+    _bmSelectedPhases = new Set(cfg.benchmark_phases);
+  }
+  const level = document.getElementById("bm-level-input");
+  if (level && cfg.benchmark_level) level.value = cfg.benchmark_level;
+  const tmin = document.getElementById("bm-tmin-input");
+  if (tmin && cfg.benchmark_t_min) tmin.value = cfg.benchmark_t_min;
+  const tmax = document.getElementById("bm-tmax-input");
+  if (tmax && cfg.benchmark_t_max) tmax.value = cfg.benchmark_t_max;
+  const wd = document.getElementById("bm-workdir-input");
+  if (wd && cfg.benchmark_workdir) wd.value = cfg.benchmark_workdir;
+  const ref = document.getElementById("bm-ref-tdb-input");
+  if (ref && cfg.benchmark_reference_tdb) ref.value = cfg.benchmark_reference_tdb;
+  const mode = document.getElementById("bm-mode-select");
+  if (mode && cfg.benchmark_mode) mode.value = cfg.benchmark_mode;
+  bmUpdateMlipCheckboxes();
+  bmUpdatePhaseCheckboxes();
+}
+
+async function bmSaveConfig() {
+  const patch = {
+    benchmark_elements: _bmElements,
+    benchmark_mlips: [..._bmSelectedMlips],
+    benchmark_phases: [..._bmSelectedPhases],
+    benchmark_workdir: document.getElementById("bm-workdir-input")?.value || "",
+    benchmark_reference_tdb: document.getElementById("bm-ref-tdb-input")?.value || "",
+    benchmark_mode: document.getElementById("bm-mode-select")?.value || "relaxed",
+    benchmark_level: parseInt(document.getElementById("bm-level-input")?.value || "2"),
+    benchmark_t_min: parseFloat(document.getElementById("bm-tmin-input")?.value || "300"),
+    benchmark_t_max: parseFloat(document.getElementById("bm-tmax-input")?.value || "3000"),
+  };
+  Object.assign(cfg, patch);
+  try { await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); } catch {}
+}
+
+function bmRenderElementTags() {
+  const wrap = document.getElementById("bm-elements-wrap");
+  if (!wrap) return;
+  wrap.querySelectorAll(".tag").forEach(t => t.remove());
+  const inp = document.getElementById("bm-elements-input");
+  _bmElements.forEach(el => {
+    const t = document.createElement("span");
+    t.className = "tag";
+    t.textContent = el;
+    t.onclick = () => { _bmElements = _bmElements.filter(e => e !== el); bmRenderElementTags(); bmSaveConfig(); };
+    wrap.insertBefore(t, inp);
+  });
+}
+
+function bmHandleElementKey(event) {
+  const inp = document.getElementById("bm-elements-input");
+  if (!inp) return;
+  if (event.key === "Enter" || event.key === ",") {
+    event.preventDefault();
+    const val = inp.value.replace(/,/g, "").trim().toUpperCase();
+    if (val && !_bmElements.includes(val)) { _bmElements.push(val); bmRenderElementTags(); bmSaveConfig(); }
+    inp.value = "";
+  }
+}
+
+async function bmPopulateMlipList() {
+  const list = document.getElementById("bm-mlip-list");
+  if (!list) return;
+  try {
+    const resp = await fetch("/api/calculators");
+    const calcs = await resp.json();
+    const mlips = Array.isArray(calcs) ? calcs : (calcs.calculators || []);
+    if (!mlips.length) { list.innerHTML = '<div style="color:var(--text2);font-size:11px;">No MLIPs found.</div>'; return; }
+    list.innerHTML = mlips.map(m => `
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:2px 0;">
+        <input type="checkbox" value="${m}" ${_bmSelectedMlips.has(m) ? "checked" : ""}
+          onchange="bmToggleMlip('${m}')" style="accent-color:var(--accent)"> ${m}
+      </label>`).join("");
+  } catch {
+    list.innerHTML = '<div style="color:var(--text2);font-size:11px;">Could not load calculators.</div>';
+  }
+}
+
+function bmUpdateMlipCheckboxes() {
+  const list = document.getElementById("bm-mlip-list");
+  if (!list) return;
+  list.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    cb.checked = _bmSelectedMlips.has(cb.value);
+  });
+}
+
+function bmToggleMlip(mlip) {
+  if (_bmSelectedMlips.has(mlip)) _bmSelectedMlips.delete(mlip);
+  else _bmSelectedMlips.add(mlip);
+  bmSaveConfig();
+}
+
+function bmRenderPhaseCheckboxes() {
+  const list = document.getElementById("bm-phase-list");
+  if (!list) return;
+  list.innerHTML = _bmDefaultPhases.map(p => `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:2px 0;">
+      <input type="checkbox" value="${p}" ${_bmSelectedPhases.has(p) ? "checked" : ""}
+        onchange="bmTogglePhase('${p}')" style="accent-color:var(--accent)"> ${p}
+    </label>`).join("");
+}
+
+function bmUpdatePhaseCheckboxes() {
+  const list = document.getElementById("bm-phase-list");
+  if (!list) return;
+  list.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    if (_bmSelectedPhases.has(cb.value)) cb.checked = true;
+  });
+}
+
+function bmTogglePhase(phase) {
+  if (_bmSelectedPhases.has(phase)) _bmSelectedPhases.delete(phase);
+  else _bmSelectedPhases.add(phase);
+  bmSaveConfig();
+}
+
+async function bmBrowseWorkdir() {
+  const inp = document.getElementById("bm-workdir-input");
+  if (!inp) return;
+  const cur = inp.value || cfg.benchmark_workdir || "";
+  try {
+    const resp = await fetch(`/api/browse?path=${encodeURIComponent(cur)}`);
+    const data = await resp.json();
+    if (data.path) { inp.value = data.path; bmSaveConfig(); }
+  } catch {}
+}
+
+async function bmBrowseRefTdb() {
+  const inp = document.getElementById("bm-ref-tdb-input");
+  if (!inp) return;
+  const cur = inp.value || cfg.benchmark_reference_tdb || "";
+  try {
+    const resp = await fetch(`/api/browse?path=${encodeURIComponent(cur)}&filter=.tdb`);
+    const data = await resp.json();
+    if (data.path) { inp.value = data.path; bmSaveConfig(); }
+  } catch {}
+}
+
+async function bmRun() {
+  const workdir = document.getElementById("bm-workdir-input")?.value?.trim() || "";
+  const refTdb = document.getElementById("bm-ref-tdb-input")?.value?.trim() || "";
+  const level = parseInt(document.getElementById("bm-level-input")?.value || "2");
+  const tMin = parseFloat(document.getElementById("bm-tmin-input")?.value || "300");
+  const tMax = parseFloat(document.getElementById("bm-tmax-input")?.value || "3000");
+  const mode = document.getElementById("bm-mode-select")?.value || "relaxed";
+
+  if (!_bmElements.length || !_bmSelectedMlips.size || !_bmSelectedPhases.size || !workdir) {
+    alert("Elements, MLIPs, phases, and workdir required."); return;
+  }
+
+  document.getElementById("bm-run-btn").disabled = true;
+  document.getElementById("bm-cancel-btn").style.display = "";
+  document.getElementById("bm-empty-msg").style.display = "none";
+
+  try {
+    const resp = await fetch("/api/benchmark/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elements: _bmElements,
+        mlips: [..._bmSelectedMlips],
+        phases: [..._bmSelectedPhases],
+        workdir, level,
+        t_min: tMin, t_max: tMax,
+        mode,
+        reference_tdb: refTdb,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); document.getElementById("bm-run-btn").disabled = false; return; }
+    _bmActiveBenchmarkId = data.benchmark_id;
+    bmStartPolling();
+    bmSaveConfig();
+  } catch (e) {
+    alert("Failed to start benchmark: " + e);
+    document.getElementById("bm-run-btn").disabled = false;
+  }
+}
+
+async function bmCancel() {
+  if (!_bmActiveBenchmarkId) return;
+  await fetch(`/api/benchmark/cancel/${_bmActiveBenchmarkId}`, { method: "POST" });
+  clearInterval(_bmPollTimer);
+  document.getElementById("bm-run-btn").disabled = false;
+  document.getElementById("bm-cancel-btn").style.display = "none";
+}
+
+function bmStartPolling() {
+  clearInterval(_bmPollTimer);
+  _bmPollTimer = setInterval(bmPollStatus, 3000);
+  bmPollStatus();
+}
+
+async function bmPollStatus() {
+  if (!_bmActiveBenchmarkId) { clearInterval(_bmPollTimer); return; }
+  try {
+    const resp = await fetch(`/api/benchmark/status/${_bmActiveBenchmarkId}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    _bmLastStatus = data;
+    bmApplyStatus(data);
+    if (data.state === "done" || data.state === "error" || data.state === "canceled") {
+      clearInterval(_bmPollTimer);
+      document.getElementById("bm-run-btn").disabled = false;
+      document.getElementById("bm-cancel-btn").style.display = "none";
+      await bmLoadBenchmarkList();
+    }
+  } catch {}
+}
+
+function bmApplyStatus(data) {
+  const stateEl = document.getElementById("bm-overall-state");
+  if (stateEl) stateEl.textContent = `${data.system}  [${data.state}]`;
+  bmRenderProgress(data);
+  if (data.mlip_jobs) {
+    bmRenderPhaseGrid(data);
+    bmRenderMetricsTable(data);
+  }
+}
+
+function _bmStateColor(state) {
+  return { running: "var(--yellow)", done: "var(--green)", error: "var(--red)", idle: "var(--text2)", canceled: "var(--text2)" }[state] || "var(--text2)";
+}
+
+function bmRenderProgress(data) {
+  const panel = document.getElementById("bm-progress-panel");
+  if (!panel || !data.mlip_jobs) return;
+  panel.style.display = "";
+  panel.innerHTML = Object.entries(data.mlip_jobs).map(([mlip, job]) => {
+    const color = _bmStateColor(job.state);
+    const elapsed = job.elapsed_s != null ? ` ${job.elapsed_s.toFixed(0)}s` : "";
+    return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;font-family:monospace;">
+      <span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0;"></span>
+      <span style="min-width:80px;">${mlip}</span>
+      <span style="color:${color};">${job.state}${elapsed}</span>
+      <span style="color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(job.log_tail || []).slice(-1)[0] || ""}</span>
+    </div>`;
+  }).join("");
+}
+
+function bmRenderPhaseGrid(data) {
+  const grid = document.getElementById("bm-phase-grid");
+  const empty = document.getElementById("bm-empty-msg");
+  if (!grid) return;
+  const jobs = data.mlip_jobs || {};
+  const hasAny = Object.values(jobs).some(j => j.png_paths && j.png_paths.length > 0);
+  if (!hasAny) return;
+  if (empty) empty.style.display = "none";
+
+  if (_bmViewMode === "grid" || _bmViewMode === "individual") {
+    const cols = _bmViewMode === "individual" ? 1 : Math.min(Object.keys(jobs).length, 4);
+    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(240px, 1fr))`;
+    grid.innerHTML = "";
+    Object.entries(jobs).forEach(([mlip, job]) => {
+      if (!job.png_paths || !job.png_paths.length) return;
+      const pngFile = job.png_paths[0].split("/").pop();
+      const imgUrl = `/benchmark_file/${data.benchmark_id}/${mlip.replace(/\s/g,"_")}/${pngFile}`;
+      const metrics = job.metrics;
+      let scoreHtml = "";
+      if (metrics && metrics.available && metrics.classification) {
+        const f1 = (metrics.classification.f1 * 100).toFixed(1);
+        const acc = (metrics.classification.accuracy * 100).toFixed(1);
+        scoreHtml = `<div style="font-size:10px;color:var(--text2);margin-top:3px;">F1 ${f1}%  Acc ${acc}%</div>`;
+      } else if (metrics && !metrics.available) {
+        scoreHtml = `<div style="font-size:10px;color:var(--text2);margin-top:3px;">No reference metrics</div>`;
+      }
+      const card = document.createElement("div");
+      card.style.cssText = "border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg2);";
+      card.innerHTML = `
+        <div style="padding:6px 10px;font-size:11px;font-weight:600;font-family:monospace;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${_bmStateColor(job.state)};flex-shrink:0;"></span>
+          ${mlip}
+          <span style="margin-left:auto;font-weight:400;color:var(--text2);">${job.state}</span>
+          <button class="btn" style="padding:1px 5px;font-size:9px;" onclick="bmSendToPfp('${mlip}')">→PFP</button>
+        </div>
+        <img src="${imgUrl}" alt="${mlip} phase diagram"
+          style="width:100%;display:block;" onerror="this.style.display='none'">
+        <div style="padding:4px 10px 6px;">${scoreHtml}</div>`;
+      grid.appendChild(card);
+    });
+  }
+}
+
+function bmRenderMetricsTable(data) {
+  const section = document.getElementById("bm-metrics-section");
+  const table = document.getElementById("bm-metrics-table");
+  if (!section || !table) return;
+  const jobs = data.mlip_jobs || {};
+  const rows = Object.entries(jobs).map(([mlip, job]) => {
+    const m = job.metrics;
+    const f1 = m?.classification?.f1 != null ? (m.classification.f1 * 100).toFixed(1) + "%" : "—";
+    const acc = m?.classification?.accuracy != null ? (m.classification.accuracy * 100).toFixed(1) + "%" : "—";
+    const madT = m?.boundary?.mad_t != null ? m.boundary.mad_t.toFixed(0) + " K" : "—";
+    const elapsed = job.elapsed_s != null ? job.elapsed_s.toFixed(0) + "s" : "—";
+    return { mlip, f1, acc, madT, elapsed, state: job.state };
+  });
+  if (!rows.length) return;
+  section.style.display = "";
+  const headers = ["MLIP", "F1", "Accuracy", "Boundary MAD-T", "Runtime", "Status"];
+  const keys = ["mlip", "f1", "acc", "madT", "elapsed", "state"];
+  table.innerHTML = `
+    <thead><tr style="border-bottom:1px solid var(--border);">${headers.map((h, i) =>
+      `<th style="padding:4px 10px;text-align:left;color:var(--text2);font-weight:600;cursor:pointer;" onclick="bmSortBy('${keys[i]}')">${h}</th>`
+    ).join("")}</tr></thead>
+    <tbody>${rows.map(r =>
+      `<tr style="border-bottom:1px solid rgba(48,54,61,0.5);">${keys.map(k =>
+        `<td style="padding:4px 10px;color:${k==="state" ? _bmStateColor(r.state) : "var(--text)"};">${r[k]}</td>`
+      ).join("")}</tr>`
+    ).join("")}</tbody>`;
+}
+
+function bmSortBy(col) {
+  if (_bmSortCol === col) _bmSortAsc = !_bmSortAsc;
+  else { _bmSortCol = col; _bmSortAsc = true; }
+  if (_bmLastStatus) bmRenderMetricsTable(_bmLastStatus);
+}
+
+function bmSetView(mode) {
+  _bmViewMode = mode;
+  document.querySelectorAll(".bm-view-btn").forEach(b => b.classList.remove("active"));
+  const btn = document.getElementById(`bm-view-${mode}`);
+  if (btn) btn.classList.add("active");
+  if (_bmLastStatus) bmRenderPhaseGrid(_bmLastStatus);
+}
+
+async function bmLoadBenchmarkList() {
+  const list = document.getElementById("bm-past-list");
+  if (!list) return;
+  try {
+    const resp = await fetch("/api/benchmark/list");
+    const data = await resp.json();
+    const bms = data.benchmarks || [];
+    if (!bms.length) { list.innerHTML = '<div style="color:var(--text2);font-size:11px;">No benchmarks yet.</div>'; return; }
+    list.innerHTML = bms.map(b => {
+      const color = _bmStateColor(b.state);
+      const when = new Date(b.created_at * 1000).toLocaleString();
+      return `<div style="padding:4px 6px;background:var(--bg3);border-radius:var(--radius);cursor:pointer;font-size:11px;" onclick="bmLoadBenchmark('${b.benchmark_id}')">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+          <span style="font-weight:600;font-family:monospace;">${b.system}</span>
+          <span style="color:var(--text2);margin-left:auto;">${b.n_mlips} MLIPs</span>
+          <button class="btn" style="padding:1px 5px;font-size:9px;" onclick="event.stopPropagation();bmDeleteBenchmark('${b.benchmark_id}')">✕</button>
+        </div>
+        <div style="color:var(--text2);font-size:10px;margin-top:1px;">${when}</div>
+      </div>`;
+    }).join("");
+  } catch {}
+}
+
+async function bmLoadBenchmark(benchmarkId) {
+  _bmActiveBenchmarkId = benchmarkId;
+  await bmPollStatus();
+}
+
+async function bmDeleteBenchmark(benchmarkId) {
+  await fetch(`/api/benchmark/delete/${benchmarkId}`, { method: "POST" });
+  await bmLoadBenchmarkList();
+  if (_bmActiveBenchmarkId === benchmarkId) {
+    _bmActiveBenchmarkId = null;
+    const grid = document.getElementById("bm-phase-grid");
+    if (grid) grid.innerHTML = "";
+    const section = document.getElementById("bm-metrics-section");
+    if (section) section.style.display = "none";
+  }
+}
+
+async function bmSendToPfp(mlip) {
+  if (!_bmActiveBenchmarkId) return;
+  const status = await (await fetch(`/api/benchmark/status/${_bmActiveBenchmarkId}`)).json();
+  const job = status.mlip_jobs?.[mlip];
+  if (!job?.tdb_path) { alert(`No TDB available for ${mlip} yet.`); return; }
+  const tdbPath = job.tdb_path;
+  const tdbInp = document.getElementById("pfp-tdb-path");
+  if (tdbInp) tdbInp.value = tdbPath;
+  cfg.pfp_tdb_path = tdbPath;
+  try {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pfp_tdb_path: tdbPath }),
+    });
+  } catch {}
+  switchWorkspace("pfp");
 }
 
 </script>
