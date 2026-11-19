@@ -1642,6 +1642,103 @@ class StudioHandler(BaseHTTPRequestHandler):
             threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
             self._json({"ok": True, "command": " ".join(cmd)})
 
+        elif path == "/api/mf_md":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            rel_path: str = body.get("rel_path", "")
+            if not rel_path:
+                self._json({"error": "rel_path required"}, 400)
+                return
+            steps: int = int(body.get("steps", 100))
+            calc_name: str = body.get("calculator", _cfg.get("calculator", "grace"))
+            model: str = body.get("model", "")
+            device: str = body.get("device", _cfg.get("device", "cpu"))
+            ensemble: str = body.get("ensemble", "nvt_nose_hoover")
+            temperature: int = int(body.get("temperature", 300))
+            timestep: float = float(body.get("timestep", 1.0))
+            pressure: float = float(body.get("pressure", 1.0))
+            ttime: float = float(body.get("ttime", 10.0))
+            interval: int = int(body.get("interval", 1))
+
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            struct_path = path1 / rel_path
+            if not struct_path.exists():
+                self._json({"error": f"File not found: {rel_path}"}, 404)
+                return
+
+            def _run_mf_md() -> None:
+                import sys
+                import traceback as tb
+
+                import numpy as np
+
+                from phaseforge_studio.analysis import _json_default
+
+                mf_src = Path(__file__).parent / "MaterialsFramework" / "src"
+                if str(mf_src) not in sys.path:
+                    sys.path.insert(0, str(mf_src))
+
+                try:
+                    from ase.io import read as ase_read
+
+                    atoms = ase_read(str(struct_path))
+
+                    from materialsframework.calculators.registry import get_calculator
+
+                    _device_calcs = {"grace", "mace", "chgnet", "orb", "sevennet", "m3gnet", "mattersim"}
+                    calc_kwargs: dict[str, Any] = {
+                        "ensemble": ensemble,
+                        "timestep": timestep,
+                        "temperature": temperature,
+                        "pressure": pressure,
+                        "ttime": ttime,
+                        "interval": interval,
+                    }
+                    if model:
+                        calc_kwargs["model"] = model
+                    if device and calc_name in _device_calcs:
+                        calc_kwargs["device"] = device
+
+                    calculator = get_calculator(calc_name, **calc_kwargs)
+                    result = calculator.run(atoms, steps)
+
+                    # Serialise numpy arrays
+                    serialisable: dict[str, Any] = {}
+                    for k, v in result.items():
+                        if k == "final_structure":
+                            try:
+                                serialisable[k] = v.as_dict()
+                            except AttributeError:
+                                serialisable[k] = str(v)
+                        elif hasattr(v, "tolist"):
+                            serialisable[k] = v.tolist()
+                        elif isinstance(v, list) and v and hasattr(v[0], "tolist"):
+                            serialisable[k] = [x.tolist() for x in v]
+                        else:
+                            serialisable[k] = v
+
+                    _mf_md_results["last"] = {
+                        "ok": True,
+                        "steps": steps,
+                        "ensemble": ensemble,
+                        "temperature": temperature,
+                        **serialisable,
+                    }
+                except Exception as exc:
+                    _mf_md_results["last"] = {"error": str(exc), "traceback": tb.format_exc()}
+
+            _mf_md_results: dict[str, Any] = {}
+            t = threading.Thread(target=_run_mf_md, daemon=True)
+            t.start()
+            t.join(timeout=float(body.get("timeout", 300)))
+            if t.is_alive():
+                self._json({"error": "MD timed out — still running in background"}, 202)
+                return
+            self._json(_mf_md_results.get("last", {"error": "No result"}))
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())

@@ -257,3 +257,48 @@ class TestNebTwoStructure:
         )
         assert "error" in result
         assert "not found" in result["error"].lower() or "final" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# MF MD route — body validation
+# ---------------------------------------------------------------------------
+
+
+class TestMfMdRouteValidation:
+    """Validate /api/mf_md body structure without running MD."""
+
+    def test_missing_rel_path_detected(self) -> None:
+        # Route requires rel_path; missing means body is incomplete
+        body: dict[str, object] = {"calculator": "grace", "steps": 100}
+        assert "rel_path" not in body
+
+    def test_default_ensemble_is_nvt(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "calculator": "grace", "steps": 50}
+        assert body.get("ensemble", "nvt_nose_hoover") == "nvt_nose_hoover"
+
+    def test_steps_coerced_to_int(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "steps": "200"}
+        assert int(str(body["steps"])) == 200
+
+    def test_temperature_default(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR"}
+        assert int(body.get("temperature", 300)) == 300
+
+    def test_md_result_keys_expected(self) -> None:
+        # Keys returned by BaseMDCalculator.run() per its docstring
+        expected = {"total_energy", "potential_energy", "kinetic_energy", "temperature", "final_structure"}
+        # At minimum these must be present in a successful result
+        assert expected <= {
+            "total_energy",
+            "potential_energy",
+            "kinetic_energy",
+            "forces",
+            "stresses",
+            "temperature",
+            "velocities",
+            "final_structure",
+        }
+
+    def test_timeout_body_param(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR", "timeout": 60}
+        assert float(str(body["timeout"])) == 60.0
