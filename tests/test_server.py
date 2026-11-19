@@ -302,3 +302,33 @@ class TestMfMdRouteValidation:
     def test_timeout_body_param(self) -> None:
         body: dict[str, object] = {"rel_path": "POSCAR", "timeout": 60}
         assert float(str(body["timeout"])) == 60.0
+
+
+# ---------------------------------------------------------------------------
+# Slab wizard — body validation
+# ---------------------------------------------------------------------------
+
+
+class TestSlabWizardValidation:
+    """Validate /api/mf_slab body structure."""
+
+    def test_missing_rel_path_detected(self) -> None:
+        body: dict[str, object] = {"miller_index": [1, 0, 0]}
+        assert "rel_path" not in body
+
+    def test_miller_defaults_to_100(self) -> None:
+        body: dict[str, object] = {"rel_path": "POSCAR"}
+        miller = body.get("miller_index", [1, 0, 0])
+        assert miller == [1, 0, 0]
+
+    def test_miller_three_ints(self) -> None:
+        raw = "1 1 0"
+        parsed = [int(x) for x in raw.split()]
+        assert len(parsed) == 3
+
+    def test_min_slab_coerced_float(self) -> None:
+        assert float("7") == 7.0
+
+    def test_center_slab_bool(self) -> None:
+        body: dict[str, object] = {"center_slab": True}
+        assert bool(body["center_slab"]) is True

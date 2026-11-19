@@ -1421,6 +1421,40 @@ select option { background: var(--bg3); }
       </div>
     </div>
 
+    <!-- ── Slab generation wizard ──────────────────────────── -->
+    <div id="slab-wizard-panel">
+      <h4>Slab Generator</h4>
+      <div class="analysis-row">
+        <label>Miller index</label>
+        <input type="text" id="slab-miller" value="1 0 0" placeholder="h k l" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Min slab (Å)</label>
+        <input type="number" id="slab-min-slab" value="7" min="1" step="0.5" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label>Min vacuum (Å)</label>
+        <input type="number" id="slab-min-vac" value="15" min="1" step="0.5" style="flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:11px;">
+      </div>
+      <div class="analysis-row">
+        <label><input type="checkbox" id="slab-center" checked> Center slab</label>
+        <label><input type="checkbox" id="slab-reorient" checked> Reorient lattice</label>
+      </div>
+      <div class="analysis-row">
+        <label>Structure</label>
+        <span id="slab-struct-label" style="font-size:11px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">(select from browser)</span>
+      </div>
+      <div class="analysis-row">
+        <button class="btn" id="run-slab-btn" onclick="runSlabGen()" style="margin-left:auto;">⬡ Generate Slabs</button>
+      </div>
+      <div id="slab-spinner" style="font-size:11px;color:var(--accent);display:none;margin-top:4px;">⏳ Generating…</div>
+      <div id="slab-error" style="color:#f87171;font-size:11px;margin-top:6px;display:none;"></div>
+      <div id="slab-result" style="margin-top:8px;font-size:11px;display:none;">
+        <div id="slab-summary" style="font-weight:600;margin-bottom:4px;"></div>
+        <ul id="slab-list" style="list-style:disc;padding-left:16px;line-height:1.6;"></ul>
+      </div>
+    </div>
+
     <!-- ── MF MD panel ───────────────────────────────────────── -->
     <div id="mf-md-panel">
       <h4>Molecular Dynamics</h4>
@@ -2995,6 +3029,7 @@ async function onBrowserClick(relPath, kind, name) {
     activeStructurePath = relPath;
     updateAnalyzerStructLabel();
     updateMdStructLabel();
+    updateSlabStructLabel();
     try {
       switchTab("structure");
       await new Promise(res => requestAnimationFrame(res));
@@ -3344,6 +3379,75 @@ function renderAnalysisResult(data, info) {
   } else {
     chartCanvas.style.display = "none";
   }
+}
+
+// ── Slab generation wizard ───────────────────────────────────────────────────
+function updateSlabStructLabel() {
+  const lbl = document.getElementById("slab-struct-label");
+  if (!lbl) return;
+  lbl.textContent = activeStructurePath
+    ? activeStructurePath.split("/").slice(-3).join("/")
+    : "(select from browser)";
+}
+
+async function runSlabGen() {
+  const spinner  = document.getElementById("slab-spinner");
+  const errDiv   = document.getElementById("slab-error");
+  const resultDiv = document.getElementById("slab-result");
+  errDiv.style.display = "none";
+  resultDiv.style.display = "none";
+  if (!activeStructurePath) {
+    errDiv.textContent = "Select a structure from the file browser first.";
+    errDiv.style.display = "block";
+    return;
+  }
+  const millerRaw = (document.getElementById("slab-miller").value || "1 0 0").trim().split(/\s+/);
+  const millerIndex = millerRaw.map(Number);
+  if (millerIndex.length !== 3 || millerIndex.some(isNaN)) {
+    errDiv.textContent = "Miller index must be three integers, e.g. '1 0 0'.";
+    errDiv.style.display = "block";
+    return;
+  }
+  const min_slab_size = parseFloat(document.getElementById("slab-min-slab").value) || 7;
+  const min_vacuum_size = parseFloat(document.getElementById("slab-min-vac").value) || 15;
+  const center_slab = document.getElementById("slab-center").checked;
+  const reorient_lattice = document.getElementById("slab-reorient").checked;
+  spinner.style.display = "block";
+  document.getElementById("run-slab-btn").disabled = true;
+  try {
+    const r = await fetch("/api/mf_slab", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ rel_path: activeStructurePath, miller_index: millerIndex, min_slab_size, min_vacuum_size, center_slab, reorient_lattice }),
+    });
+    const data = await r.json();
+    if (data.error) {
+      errDiv.textContent = data.error + (data.traceback ? "\n\n" + data.traceback : "");
+      errDiv.style.display = "block";
+      errDiv.style.whiteSpace = "pre-wrap";
+      return;
+    }
+    document.getElementById("slab-summary").textContent =
+      `${data.n_slabs} slab(s) generated for (${millerIndex.join(" ")}) — click to use as structure`;
+    const ul = document.getElementById("slab-list");
+    ul.innerHTML = (data.slab_paths || []).map((p, i) =>
+      `<li><a href="#" onclick="event.preventDefault();activateSlabPath(${JSON.stringify(p)})">${p.split("/").pop()}</a></li>`
+    ).join("");
+    resultDiv.style.display = "block";
+  } catch(e) {
+    errDiv.textContent = "Request failed: " + e.message;
+    errDiv.style.display = "block";
+  } finally {
+    spinner.style.display = "none";
+    document.getElementById("run-slab-btn").disabled = false;
+  }
+}
+
+function activateSlabPath(relPath) {
+  activeStructurePath = relPath;
+  updateAnalyzerStructLabel();
+  updateMdStructLabel();
+  updateSlabStructLabel();
 }
 
 // ── MF MD panel ─────────────────────────────────────────────────────────────

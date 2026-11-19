@@ -1642,6 +1642,65 @@ class StudioHandler(BaseHTTPRequestHandler):
             threading.Thread(target=_stream_pf, args=(_pf.proc,), daemon=True).start()
             self._json({"ok": True, "command": " ".join(cmd)})
 
+        elif path == "/api/mf_slab":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "Invalid JSON body"}, 400)
+                return
+            rel_path: str = body.get("rel_path", "")
+            if not rel_path:
+                self._json({"error": "rel_path required"}, 400)
+                return
+            miller_index: list[int] = body.get("miller_index", [1, 0, 0])
+            min_slab: float = float(body.get("min_slab_size", 7.0))
+            min_vac: float = float(body.get("min_vacuum_size", 15.0))
+            center_slab: bool = bool(body.get("center_slab", True))
+            in_unit_planes: bool = bool(body.get("in_unit_planes", False))
+            max_normal_search: int = int(body.get("max_normal_search", 1))
+            reorient: bool = bool(body.get("reorient_lattice", True))
+
+            path1 = Path(_cfg["path1"]).expanduser().resolve()
+            struct_path = path1 / rel_path
+            if not struct_path.exists():
+                self._json({"error": f"File not found: {rel_path}"}, 404)
+                return
+            try:
+                from pymatgen.core import Structure as PmgStructure
+                from pymatgen.core.surface import SlabGenerator
+
+                bulk = PmgStructure.from_file(str(struct_path))
+                gen = SlabGenerator(
+                    bulk,
+                    miller_index=miller_index,
+                    min_slab_size=min_slab,
+                    min_vacuum_size=min_vac,
+                    center_slab=center_slab,
+                    in_unit_planes=in_unit_planes,
+                    max_normal_search=max_normal_search,
+                    reorient_lattice=reorient,
+                )
+                slabs = gen.get_slabs()
+                # Write slabs to staging dir and return paths
+                slab_dir = struct_path.parent / "slabs" / f"{''.join(str(h) for h in miller_index)}"
+                slab_dir.mkdir(parents=True, exist_ok=True)
+                out_paths: list[str] = []
+                for i, slab in enumerate(slabs):
+                    sp = slab_dir / f"slab_{i:03d}.vasp"
+                    slab.to(fmt="poscar", filename=str(sp))
+                    out_paths.append(str(sp.relative_to(path1)))
+                self._json({
+                    "ok": True,
+                    "miller_index": miller_index,
+                    "n_slabs": len(slabs),
+                    "slab_paths": out_paths,
+                })
+            except ImportError:
+                self._json({"error": "pymatgen not installed — cannot generate slabs"}, 500)
+            except Exception as exc:
+                import traceback as tb
+                self._json({"error": str(exc), "traceback": tb.format_exc()}, 500)
+
         elif path == "/api/mf_md":
             try:
                 body = json.loads(self._read_body())
