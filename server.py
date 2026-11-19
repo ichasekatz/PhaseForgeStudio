@@ -112,6 +112,17 @@ from phaseforge_studio.paipai import (  # noqa: E402
     struc_in_from_poscar,
     write_struc_in,
 )
+from phaseforge_studio.pfp_adapter import (  # noqa: E402
+    PfpJob,
+    cancel_pfp,
+    check_pfp_installed,
+    launch_pfp,
+    pfp_install_hint,
+    pfp_status,
+    supported_methods as _pfp_methods,
+)
+
+_pfp_job = PfpJob()
 
 
 class _PfState:
@@ -594,6 +605,12 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/pf_status":
             self._json({"state": _pf.state, "log_tail": _pf.log[-40:]})
+
+        elif path == "/api/pfp_status":
+            self._json(pfp_status(_pfp_job))
+
+        elif path == "/api/pfp_methods":
+            self._json({"methods": _pfp_methods, "installed": check_pfp_installed()})
 
         elif path.startswith("/files/"):
             rel = unquote(path[len("/files/") :])
@@ -1081,6 +1098,81 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)})
 
+        # ── PhaseForgePlus endpoints ─────────────────────────────────────────
+        elif path == "/api/pfp_run":
+            if _pfp_job.state == "running":
+                self._json({"error": "PFP optimisation already running"}, 409)
+                return
+            if not check_pfp_installed():
+                self._json({"error": pfp_install_hint()}, 503)
+                return
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            tdb_path = body.get("tdb_path") or self.cfg.get("pfp_tdb_path", "")
+            zpf_dir = body.get("zpf_dir") or self.cfg.get("pfp_zpf_dir", "")
+            if not tdb_path or not zpf_dir:
+                self._json({"error": "tdb_path and zpf_dir are required"}, 400)
+                return
+            if not Path(tdb_path).expanduser().is_file():
+                self._json({"error": f"TDB not found: {tdb_path}"}, 400)
+                return
+            if not Path(zpf_dir).expanduser().is_dir():
+                self._json({"error": f"ZPF directory not found: {zpf_dir}"}, 400)
+                return
+            points_raw = body.get("points", self.cfg.get("pfp_points", [0, 1, 2, 3, 4]))
+            points = [int(p) for p in points_raw]
+            pressure = float(body.get("pressure", self.cfg.get("pfp_pressure", 101325.0)))
+            temperature = float(body.get("temperature", self.cfg.get("pfp_temperature", 298.15)))
+            method = str(body.get("method", self.cfg.get("pfp_method", "CG")))
+            tol_raw = body.get("tol", self.cfg.get("pfp_tol"))
+            tol = float(tol_raw) if tol_raw is not None else None
+            maxiter_raw = body.get("maxiter", self.cfg.get("pfp_maxiter"))
+            maxiter = int(maxiter_raw) if maxiter_raw is not None else None
+            output_path = body.get("output_path", self.cfg.get("pfp_output_path", ""))
+            launch_pfp(
+                _pfp_job,
+                tdb_path=str(Path(tdb_path).expanduser()),
+                zpf_dir=str(Path(zpf_dir).expanduser()),
+                points=points,
+                pressure=pressure,
+                temperature=temperature,
+                method=method,
+                tol=tol,
+                maxiter=maxiter,
+                output_path=str(Path(output_path).expanduser()) if output_path else "",
+            )
+            self._json({"ok": True, "method": method, "n_points": len(points)})
+
+        elif path == "/api/pfp_stop":
+            cancel_pfp(_pfp_job)
+            self._json({"ok": True})
+
+        elif path == "/api/pfp_initial_values":
+            if not check_pfp_installed():
+                self._json({"error": pfp_install_hint()}, 503)
+                return
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            tdb_path = body.get("tdb_path", "")
+            if not tdb_path or not Path(tdb_path).expanduser().is_file():
+                self._json({"error": "tdb_path required and must exist"}, 400)
+                return
+            try:
+                from espei.utils import database_symbols_to_fit, unpack_piecewise
+                from phaseforgeplus.io import load_tdb
+                db = load_tdb(str(Path(tdb_path).expanduser()))
+                symbols = database_symbols_to_fit(db)
+                values = [float(unpack_piecewise(db.symbols[s])) for s in symbols]
+                self._json({"symbols": list(symbols), "initial_values": values})
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
         elif path == "/api/analyze":
             try:
                 params = json.loads(self._read_body())
@@ -1330,6 +1422,7 @@ def main() -> None:
     _root_keys = {
         "mf": "path1",
         "pf": "pf_workdir",
+        "pfp": "pfp_tdb_path",  # registered as parent dir of TDB
         "blade": "blade_path1",
         "paipai": "paipai_workdir",
         "orchid": "orchid_data_dir",
@@ -1338,6 +1431,9 @@ def main() -> None:
         raw = cfg.get(cfg_key, "")
         if raw:
             p = Path(raw).expanduser().resolve()
+            # pfp_tdb_path is a file — register its parent directory
+            if label == "pfp" and p.is_file():
+                p = p.parent
             if p.exists():
                 register_root(label, p)
                 print(f"  fs root [{label:7s}]: {p}")

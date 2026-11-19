@@ -56,6 +56,16 @@ _default_config: dict[str, Any] = {
     "paipai_host_counts": [8, 8],
     "paipai_interstitial_elements": [],
     "paipai_interstitial_counts": [],
+    # PhaseForgePlus workspace
+    "pfp_tdb_path": "",
+    "pfp_zpf_dir": "",
+    "pfp_points": [0, 1, 2, 3, 4],
+    "pfp_pressure": 101325.0,
+    "pfp_temperature": 298.15,
+    "pfp_method": "CG",
+    "pfp_tol": None,
+    "pfp_maxiter": None,
+    "pfp_output_path": "",
     # ORCHID workspace
     "orchid_elements": ["Al", "Fe"],
     "orchid_system": "",

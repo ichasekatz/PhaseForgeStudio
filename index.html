@@ -449,6 +449,7 @@ select option { background: var(--bg3); }
     <button class="ws-tab" id="ws-tab-blade" onclick="switchWorkspace('blade')">BLADE</button>
     <button class="ws-tab" id="ws-tab-paipai" onclick="switchWorkspace('paipai')">PAIPAI</button>
     <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid')">ORCHID</button>
+    <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
   <div class="status-pill" onclick="toggleJobHistory()" title="Click to show job history" style="cursor:pointer;">
@@ -756,6 +757,109 @@ select option { background: var(--bg3); }
       <div class="section-label" style="margin-bottom:6px;">Compare with PhaseForge</div>
       <input id="orchid-compare-tdb" type="text" placeholder="path/to/generated.tdb">
       <button class="btn" style="margin-top:4px;width:100%;" onclick="orchidCompareWithLocal()">Compare</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── PhaseForgePlus workspace ───────────────────────────────── -->
+<div id="pfp-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+  <!-- Left config panel -->
+  <div class="panel" style="width:320px;min-width:260px;max-width:420px;overflow-y:auto;">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:0.95em;">
+      PhaseForgePlus — TDB Optimisation
+    </div>
+    <div id="pfp-not-installed" style="display:none;padding:12px 14px;">
+      <div class="log-line" style="color:var(--warn);">⚠ phaseforgeplus not installed.</div>
+      <pre id="pfp-install-hint" style="font-size:0.78em;margin-top:6px;white-space:pre-wrap;"></pre>
+    </div>
+    <div id="pfp-controls">
+      <div style="padding:10px 14px;">
+        <div class="section-label">Input TDB</div>
+        <div style="display:flex;gap:4px;">
+          <input id="pfp-tdb-path" type="text" placeholder="path/to/input.tdb" style="flex:1;">
+          <button class="btn" onclick="pfpBrowseTdb()" title="Browse">…</button>
+        </div>
+        <div class="section-label" style="margin-top:8px;">ZPF Data Directory</div>
+        <div style="display:flex;gap:4px;">
+          <input id="pfp-zpf-dir" type="text" placeholder="path/to/zpf_data/">
+          <button class="btn" onclick="pfpBrowseZpf()" title="Browse">…</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <div style="flex:1;">
+            <div class="section-label">Pressure (Pa)</div>
+            <input id="pfp-pressure" type="number" value="101325" step="1000">
+          </div>
+          <div style="flex:1;">
+            <div class="section-label">Temperature (K)</div>
+            <input id="pfp-temperature" type="number" value="298.15" step="10">
+          </div>
+        </div>
+        <div class="section-label" style="margin-top:8px;">Points (comma-separated indices)</div>
+        <input id="pfp-points" type="text" value="0,1,2,3,4" placeholder="0,1,2,3,4">
+      </div>
+      <div style="padding:0 14px 10px;">
+        <div class="section-label">Optimiser Method</div>
+        <select id="pfp-method" style="width:100%;">
+          <option value="CG">CG — Conjugate Gradient (recommended)</option>
+          <option value="L-BFGS-B">L-BFGS-B</option>
+          <option value="BFGS">BFGS</option>
+        </select>
+        <div class="section-label" style="margin-top:8px;">Advanced Options</div>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-size:0.78em;color:var(--text2);">Tolerance</div>
+            <input id="pfp-tol" type="number" placeholder="auto" step="1e-8" style="font-size:0.85em;">
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:0.78em;color:var(--text2);">Max Iterations</div>
+            <input id="pfp-maxiter" type="number" placeholder="auto" min="1" style="font-size:0.85em;">
+          </div>
+        </div>
+        <div class="section-label" style="margin-top:8px;">Output TDB (optional)</div>
+        <input id="pfp-output-path" type="text" placeholder="auto (input_fitted.tdb)">
+      </div>
+      <div style="padding:0 14px 12px;display:flex;gap:6px;">
+        <button id="pfp-run-btn" class="btn" style="flex:1;background:var(--accent);color:#fff;" onclick="pfpRun()">▶ Run</button>
+        <button id="pfp-stop-btn" class="btn" style="flex:1;" onclick="pfpStop()" disabled>■ Stop</button>
+      </div>
+      <div style="padding:0 14px 12px;">
+        <button class="btn" style="width:100%;font-size:0.82em;" onclick="pfpLoadInitial()">Inspect initial parameter values</button>
+      </div>
+      <div id="pfp-initial-panel" style="display:none;padding:0 14px 12px;">
+        <div class="section-label">Initial Parameter Values</div>
+        <pre id="pfp-initial-text" style="font-size:0.75em;max-height:200px;overflow-y:auto;background:var(--bg2);padding:6px;border-radius:4px;"></pre>
+      </div>
+      <div style="padding:0 14px 12px;">
+        <div class="section-label">Transfer from PhaseForge</div>
+        <div id="pfp-pf-tdb-list" style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;font-size:0.82em;"></div>
+        <div style="font-size:0.78em;color:var(--text2);margin-top:3px;">Select a PhaseForge-generated TDB to open in PhaseForgePlus.</div>
+      </div>
+    </div>
+  </div>
+  <!-- Right results panel -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+    <!-- Status bar -->
+    <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <span style="font-weight:600;font-size:0.9em;">Status:</span>
+      <span id="pfp-status-pill" class="status-pill">idle</span>
+      <span id="pfp-elapsed" style="font-size:0.82em;color:var(--text2);"></span>
+      <span id="pfp-iter-count" style="font-size:0.82em;color:var(--text2);margin-left:auto;"></span>
+    </div>
+    <!-- Result summary -->
+    <div id="pfp-result-panel" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);">
+      <div class="section-label">Result</div>
+      <div id="pfp-result-text" style="font-size:0.85em;"></div>
+      <button id="pfp-download-btn" class="btn" style="margin-top:6px;display:none;" onclick="pfpDownloadTdb()">⬇ Download fitted TDB</button>
+    </div>
+    <!-- Iteration plot placeholder -->
+    <div id="pfp-chart-wrap" style="padding:10px 14px;border-bottom:1px solid var(--border);">
+      <canvas id="pfp-chart" height="140" style="width:100%;"></canvas>
+      <div id="pfp-chart-empty" style="text-align:center;color:var(--text2);font-size:0.82em;padding:20px;">No optimisation data yet.</div>
+    </div>
+    <!-- Log -->
+    <div style="flex:1;overflow-y:auto;padding:8px 14px;">
+      <div class="section-label" style="margin-bottom:4px;">Log</div>
+      <div id="pfp-log" style="font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;"></div>
     </div>
   </div>
 </div>
@@ -1155,14 +1259,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid" };
+  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp" };
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID" };
+    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -1187,17 +1291,20 @@ function _applyWorkspaceView(workspace) {
   const pfView = document.getElementById("pf-view");
   const paipaiView = document.getElementById("paipai-view");
   const orchidView = document.getElementById("orchid-view");
+  const pfpView = document.getElementById("pfp-view");
   if (!iframe || !panels || !pfView) return;
   panels.style.display = workspace === "mf" ? "flex" : "none";
   iframe.style.display = workspace === "blade" ? "flex" : "none";
   pfView.style.display = workspace === "pf" ? "flex" : "none";
   if (paipaiView) paipaiView.style.display = workspace === "paipai" ? "flex" : "none";
   if (orchidView) orchidView.style.display = workspace === "orchid" ? "flex" : "none";
+  if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
   if (workspace === "blade") iframe.src = "/blade/";
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
   if (workspace === "paipai") initPaipaiWorkspace();
   if (workspace === "orchid") initOrchidWorkspace();
+  if (workspace === "pfp") initPfpWorkspace();
 }
 
 // ── PhaseForge (sqscal) workspace ──────────────────────────
@@ -3614,6 +3721,232 @@ async function orchidCompareWithLocal() {
 }
 
 document.addEventListener("DOMContentLoaded", _initMfHandles);
+
+// ── PhaseForgePlus workspace ─────────────────────────────────
+let _pfpPollTimer = null;
+let _pfpIterData = [];
+let _pfpFittedTdb = null;
+let _pfpChart = null;
+
+async function initPfpWorkspace() {
+  const r = await fetch("/api/pfp_methods").catch(() => null);
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  const notInst = document.getElementById("pfp-not-installed");
+  const controls = document.getElementById("pfp-controls");
+  if (!d.installed) {
+    if (notInst) {
+      notInst.style.display = "";
+      const hint = document.getElementById("pfp-install-hint");
+      if (hint) hint.textContent = "pip install -e /path/to/PhaseForgePlus/";
+    }
+    if (controls) controls.style.display = "none";
+  } else {
+    if (notInst) notInst.style.display = "none";
+    if (controls) controls.style.display = "";
+  }
+  pfpLoadPfOutputs();
+  pfpPollStatus();
+}
+
+async function pfpLoadPfOutputs() {
+  const wrap = document.getElementById("pfp-pf-tdb-list");
+  if (!wrap) return;
+  const r = await fetch("/api/pf_outputs").catch(() => null);
+  if (!r) { wrap.textContent = "Could not load PhaseForge outputs."; return; }
+  const d = await r.json().catch(() => ({}));
+  const tdbs = d.tdb || [];
+  if (!tdbs.length) { wrap.textContent = "No PhaseForge TDB files found."; return; }
+  wrap.innerHTML = "";
+  tdbs.forEach(rel => {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.style.cssText = "width:100%;text-align:left;margin-bottom:2px;font-size:0.82em;";
+    btn.textContent = rel;
+    btn.onclick = () => {
+      const cfg_pf_wd = document.getElementById("pfp-tdb-path");
+      if (cfg_pf_wd) cfg_pf_wd.value = rel;
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+function pfpBrowseTdb() {
+  const p = document.getElementById("pfp-tdb-path");
+  if (!p) return;
+  const v = prompt("Enter full path to TDB file:", p.value || "");
+  if (v !== null) p.value = v.trim();
+}
+
+function pfpBrowseZpf() {
+  const p = document.getElementById("pfp-zpf-dir");
+  if (!p) return;
+  const v = prompt("Enter path to ZPF YAML directory:", p.value || "");
+  if (v !== null) p.value = v.trim();
+}
+
+async function pfpLoadInitial() {
+  const tdb = document.getElementById("pfp-tdb-path")?.value?.trim();
+  if (!tdb) { alert("Enter a TDB path first."); return; }
+  const r = await fetch("/api/pfp_initial_values", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({tdb_path: tdb}),
+  }).catch(() => null);
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  const panel = document.getElementById("pfp-initial-panel");
+  const pre = document.getElementById("pfp-initial-text");
+  if (d.error) { alert(d.error); return; }
+  if (panel) panel.style.display = "";
+  if (pre) {
+    const lines = (d.symbols || []).map((s, i) => `${s.padEnd(20)} ${(d.initial_values[i] || 0).toExponential(6)}`);
+    pre.textContent = lines.join("\n");
+  }
+}
+
+async function pfpRun() {
+  const tdb = document.getElementById("pfp-tdb-path")?.value?.trim();
+  const zpf = document.getElementById("pfp-zpf-dir")?.value?.trim();
+  if (!tdb || !zpf) { alert("TDB path and ZPF directory are required."); return; }
+  const pointsRaw = document.getElementById("pfp-points")?.value || "0,1,2,3,4";
+  const points = pointsRaw.split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+  const pressure = parseFloat(document.getElementById("pfp-pressure")?.value || "101325");
+  const temperature = parseFloat(document.getElementById("pfp-temperature")?.value || "298.15");
+  const method = document.getElementById("pfp-method")?.value || "CG";
+  const tolRaw = document.getElementById("pfp-tol")?.value?.trim();
+  const maxiterRaw = document.getElementById("pfp-maxiter")?.value?.trim();
+  const output = document.getElementById("pfp-output-path")?.value?.trim() || "";
+  const body = {tdb_path: tdb, zpf_dir: zpf, points, pressure, temperature, method, output_path: output};
+  if (tolRaw) body.tol = parseFloat(tolRaw);
+  if (maxiterRaw) body.maxiter = parseInt(maxiterRaw, 10);
+  _pfpIterData = [];
+  _pfpFittedTdb = null;
+  pfpClearChart();
+  const logEl = document.getElementById("pfp-log");
+  if (logEl) logEl.textContent = "";
+  document.getElementById("pfp-result-panel").style.display = "none";
+  const r = await fetch("/api/pfp_run", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  }).catch(() => null);
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  if (d.error) { alert(d.error); return; }
+  document.getElementById("pfp-run-btn").disabled = true;
+  document.getElementById("pfp-stop-btn").disabled = false;
+  pfpPollStatus();
+}
+
+async function pfpStop() {
+  await fetch("/api/pfp_stop", {method: "POST", headers: {"Content-Type":"application/json"}, body: "{}"}).catch(() => null);
+}
+
+function pfpPollStatus() {
+  if (_pfpPollTimer) clearInterval(_pfpPollTimer);
+  _pfpPollTimer = setInterval(async () => {
+    const r = await fetch("/api/pfp_status").catch(() => null);
+    if (!r) return;
+    const d = await r.json().catch(() => ({}));
+    pfpApplyStatus(d);
+    if (d.state !== "running") clearInterval(_pfpPollTimer);
+  }, 1500);
+}
+
+function pfpApplyStatus(d) {
+  const pill = document.getElementById("pfp-status-pill");
+  const elapsed = document.getElementById("pfp-elapsed");
+  const iterCount = document.getElementById("pfp-iter-count");
+  const logEl = document.getElementById("pfp-log");
+  if (pill) {
+    pill.textContent = d.state || "idle";
+    pill.style.background = d.state === "running" ? "var(--accent)" : d.state === "done" ? "#2a9d8f" : d.state === "error" ? "#e76f51" : "";
+  }
+  if (elapsed && d.elapsed_s != null) elapsed.textContent = `${d.elapsed_s.toFixed(1)}s`;
+  if (iterCount && d.n_iterations != null) iterCount.textContent = `${d.n_iterations} iterations`;
+  if (logEl && d.log_tail) logEl.textContent = d.log_tail.join("\n");
+  if (d.last_iteration) {
+    _pfpIterData.push(d.last_iteration);
+    pfpUpdateChart();
+  }
+  if (d.state === "done" || d.state === "error") {
+    document.getElementById("pfp-run-btn").disabled = false;
+    document.getElementById("pfp-stop-btn").disabled = true;
+    if (d.result) pfpShowResult(d.result);
+  }
+}
+
+function pfpShowResult(result) {
+  const panel = document.getElementById("pfp-result-panel");
+  const text = document.getElementById("pfp-result-text");
+  const dl = document.getElementById("pfp-download-btn");
+  if (!panel) return;
+  panel.style.display = "";
+  if (text) {
+    text.innerHTML = `
+      <b>Converged:</b> ${result.success ? "Yes ✓" : "No ✗"}<br>
+      <b>Objective:</b> ${(result.fun || 0).toExponential(4)}<br>
+      <b>Iterations:</b> ${result.nit}<br>
+      <b>Fun evaluations:</b> ${result.nfev}<br>
+      <b>Message:</b> ${result.message || "—"}<br>
+      ${result.output_tdb ? `<b>Output TDB:</b> <code>${result.output_tdb}</code>` : ""}
+    `;
+  }
+  if (dl && result.output_tdb) {
+    _pfpFittedTdb = result.output_tdb;
+    dl.style.display = "";
+  }
+}
+
+async function pfpDownloadTdb() {
+  if (!_pfpFittedTdb) return;
+  const r = await fetch("/api/fs/read_text?path=" + encodeURIComponent(_pfpFittedTdb)).catch(() => null);
+  if (!r) return;
+  const d = await r.json().catch(() => ({}));
+  if (d.content == null) return;
+  const blob = new Blob([d.content], {type: "text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = _pfpFittedTdb.split("/").pop() || "fitted.tdb";
+  a.click();
+}
+
+function pfpClearChart() {
+  _pfpIterData = [];
+  const canvas = document.getElementById("pfp-chart");
+  const empty = document.getElementById("pfp-chart-empty");
+  if (canvas) canvas.style.display = "none";
+  if (empty) empty.style.display = "";
+  if (_pfpChart) { _pfpChart.destroy(); _pfpChart = null; }
+}
+
+function pfpUpdateChart() {
+  if (!_pfpIterData.length) return;
+  const canvas = document.getElementById("pfp-chart");
+  const empty = document.getElementById("pfp-chart-empty");
+  if (!canvas) return;
+  if (empty) empty.style.display = "none";
+  canvas.style.display = "";
+  // Simple canvas sparkline — no Chart.js dependency needed
+  const ctx = canvas.getContext("2d");
+  const w = canvas.offsetWidth || 400;
+  const h = canvas.height;
+  canvas.width = w;
+  const vals = _pfpIterData.map(it => it.params ? it.params[0] : 0);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const range = mx - mn || 1;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#4a9eff";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = (i / Math.max(vals.length - 1, 1)) * w;
+    const y = h - ((v - mn) / range) * (h - 10) - 5;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
 
 </script>
 </body>
