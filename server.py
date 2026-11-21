@@ -424,6 +424,12 @@ class StudioHandler(BaseHTTPRequestHandler):
             self._json({"workflows": list_workflows()})
 
         # ── ORCHID GET endpoints (query-string based) ────────────────────────
+        elif path == "/api/orchid/status":
+            self._json({
+                "mcp_available": check_orchid_mcp(),
+                "hint": orchid_install_hint() if not check_orchid_mcp() else None,
+            })
+
         elif path == "/api/orchid/search":
             elements = qs.get("elements", [])
             system = qs.get("system", [""])[0]
