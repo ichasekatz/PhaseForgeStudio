@@ -30,7 +30,8 @@ class TestCheckPaipaiInstalled:
             assert check_paipai_installed() is True
 
     def test_false_when_not_on_path(self) -> None:
-        with patch("phaseforge_studio.paipai.shutil.which", return_value=None):
+        with patch("phaseforge_studio.paipai.shutil.which", return_value=None), \
+             patch("phaseforge_studio.paipai.Path.exists", return_value=False):
             assert check_paipai_installed() is False
 
 

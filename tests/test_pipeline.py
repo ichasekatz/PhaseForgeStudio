@@ -22,10 +22,13 @@ class TestMakeTrackingSqs2tdb:
     """Tests for the Sqs2tdb trajectory-tracking subclass factory."""
 
     def test_requires_materialsframework(self) -> None:
-        # Without MF installed the factory raises ImportError — that is expected.
-        mf_name = "materialsframework.tools.sqs2tdb"
-        if mf_name in sys.modules:
-            # MF is importable — factory should succeed
+        try:
+            import materialsframework.tools.sqs2tdb  # noqa: F401
+            mf_available = True
+        except ImportError:
+            mf_available = False
+
+        if mf_available:
             cls = _make_tracking_sqs2tdb()
             assert cls is not None
             assert issubclass(cls, object)
