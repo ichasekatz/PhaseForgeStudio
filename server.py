@@ -26,11 +26,24 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 # ---------------------------------------------------------------------------
-# Inject local MaterialsFramework source so the editable install is found
-# even in environments where .pth processing is unreliable.
+# Ensure venv packages (orchid-mcp, sage_mcp, etc.) and editable installs
+# (MaterialsFramework, PhaseForgePlus) are importable regardless of which
+# Python launched the server.
 # ---------------------------------------------------------------------------
 _gui_dir = Path(__file__).parent
-for _src in [_gui_dir / "MaterialsFramework" / "src"]:
+_venv_sp = _gui_dir / ".venv" / "lib" / "python3.12" / "site-packages"
+if _venv_sp.exists():
+    _vs = str(_venv_sp)
+    if _vs not in sys.path:
+        sys.path.insert(0, _vs)
+    # Process .pth files the site module may have skipped
+    import site as _site
+    _site.addsitedir(_vs)
+
+for _src in [
+    _gui_dir / "MaterialsFramework" / "src",
+    _gui_dir / "PhaseForgePlus" / "src",
+]:
     _s = str(_src)
     if _src.exists() and _s not in sys.path:
         sys.path.insert(0, _s)
