@@ -451,6 +451,7 @@ select option { background: var(--bg3); }
     <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid')">ORCHID</button>
     <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
     <button class="ws-tab" id="ws-tab-benchmark" onclick="switchWorkspace('benchmark')">Benchmark</button>
+    <button class="ws-tab" id="ws-tab-sage" onclick="switchWorkspace('sage')">ORCHID-SAGE</button>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
   <div class="status-pill" onclick="toggleJobHistory()" title="Click to show job history" style="cursor:pointer;">
@@ -875,6 +876,107 @@ select option { background: var(--bg3); }
     <div style="flex:1;overflow-y:auto;padding:8px 14px;">
       <div class="section-label" style="margin-bottom:4px;">Log</div>
       <div id="pfp-log" style="font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ORCHID-SAGE workspace ─────────────────────────────────── -->
+<div id="sage-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+  <!-- Left: config / search -->
+  <div class="panel" style="width:280px;min-width:200px;overflow-y:auto;flex-shrink:0;">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:0.95em;display:flex;align-items:center;gap:8px;">
+      ORCHID-SAGE
+      <span id="sage-install-badge" style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(248,81,73,0.15);color:var(--red);">not found</span>
+    </div>
+    <div id="sage-not-installed" style="display:none;padding:12px;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);border-radius:4px;margin:10px;font-size:11px;color:var(--red);white-space:pre-wrap;"></div>
+
+    <!-- Model Guide section -->
+    <div class="section-label" style="padding:8px 14px 4px;font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;">CALPHAD Model Guide</div>
+    <div style="padding:4px 10px 8px;">
+      <input id="sage-model-search-input" type="text" placeholder="Search recipes…" style="width:100%;box-sizing:border-box;"
+        oninput="sageModelSearch()">
+      <select id="sage-model-topic" style="width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:11px;" onchange="sageModelSearch()">
+        <option value="">— Any topic —</option>
+      </select>
+      <button class="btn primary" style="width:100%;margin-top:6px;" onclick="sageLoadLibrary()">Load Library</button>
+    </div>
+
+    <!-- Protocols section -->
+    <div class="section-label" style="padding:8px 14px 4px;font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;">Protocols</div>
+    <div style="padding:4px 10px 8px;">
+      <button class="btn" style="width:100%;" onclick="sageListProtocols()">List Protocols</button>
+      <div id="sage-protocol-list" style="font-size:11px;max-height:120px;overflow-y:auto;margin-top:4px;"></div>
+    </div>
+
+    <!-- ID Tools -->
+    <div class="section-label" style="padding:8px 14px 4px;font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;">Identifier Tools</div>
+    <div style="padding:4px 10px 8px;">
+      <input id="sage-id-input" type="text" placeholder="ORC-… identifier" style="width:100%;box-sizing:border-box;">
+      <button class="btn" style="width:100%;margin-top:4px;" onclick="sageValidateId()">Validate ID</button>
+    </div>
+  </div>
+
+  <!-- Right: results pane with tabs -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;">
+    <div style="display:flex;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 10px;flex-shrink:0;gap:2px;padding-top:4px;">
+      <button class="ws-tab" id="sage-tab-btn-recipes" onclick="sageSwitchTab('recipes')" style="font-size:11px;padding:4px 10px;">Recipes</button>
+      <button class="ws-tab" id="sage-tab-btn-protocol" onclick="sageSwitchTab('protocol')" style="font-size:11px;padding:4px 10px;">Protocol</button>
+      <button class="ws-tab" id="sage-tab-btn-steps" onclick="sageSwitchTab('steps')" style="font-size:11px;padding:4px 10px;">Steps</button>
+      <button class="ws-tab" id="sage-tab-btn-validate" onclick="sageSwitchTab('validate')" style="font-size:11px;padding:4px 10px;">Validate</button>
+      <button class="ws-tab" id="sage-tab-btn-ids" onclick="sageSwitchTab('ids')" style="font-size:11px;padding:4px 10px;">IDs</button>
+    </div>
+
+    <!-- Recipes tab -->
+    <div id="sage-tab-recipes" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
+      <div id="sage-recipes-status" style="color:var(--text2);font-size:12px;">Load the library or search to see model recipes.</div>
+      <div id="sage-recipes-wrap" style="display:none;">
+        <div id="sage-recipes-count" style="font-size:11px;color:var(--text2);margin-bottom:6px;"></div>
+        <div id="sage-recipes-list" style="font-size:11px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- Protocol detail tab -->
+    <div id="sage-tab-protocol" style="flex:1;overflow-y:auto;padding:12px;display:none;">
+      <div id="sage-protocol-detail" style="font-size:11px;color:var(--text2);">Select a protocol from the list.</div>
+    </div>
+
+    <!-- Steps tab -->
+    <div id="sage-tab-steps" style="flex:1;overflow:hidden;display:none;flex-direction:column;">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <span style="font-size:11px;color:var(--text2);">Protocol:</span>
+        <span id="sage-steps-protocol-label" style="font-size:11px;color:var(--accent);"></span>
+        <button class="btn" style="margin-left:auto;" onclick="sagePlanReproduction()">Plan Reproduction</button>
+      </div>
+      <div id="sage-steps-list" style="flex:1;overflow-y:auto;padding:10px;font-size:11px;"></div>
+      <div id="sage-plan-result" style="padding:8px 12px;border-top:1px solid var(--border);font-size:10px;font-family:var(--font);overflow-y:auto;max-height:160px;white-space:pre-wrap;display:none;"></div>
+    </div>
+
+    <!-- Validate tab -->
+    <div id="sage-tab-validate" style="flex:1;overflow-y:auto;padding:12px;display:none;flex-direction:column;gap:8px;">
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Model spec JSON (validate / audit)</div>
+        <textarea id="sage-spec-input" rows="8" placeholder='{"schema_version": 1, "phase": "SIGMA", ...}'
+          style="width:100%;box-sizing:border-box;font-family:var(--font);font-size:11px;resize:vertical;"></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <button class="btn primary" onclick="sageValidateSpec()">Validate</button>
+          <button class="btn" onclick="sageAuditSpec()">Audit</button>
+          <button class="btn" onclick="sageRecommendSpec()">Recommend</button>
+        </div>
+      </div>
+      <div id="sage-validate-result" style="font-size:11px;font-family:var(--font);white-space:pre-wrap;padding:8px;background:var(--bg2);border-radius:4px;border:1px solid var(--border);min-height:40px;"></div>
+    </div>
+
+    <!-- IDs tab -->
+    <div id="sage-tab-ids" style="flex:1;overflow-y:auto;padding:12px;display:none;flex-direction:column;gap:8px;">
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Compute identifiers</div>
+        <textarea id="sage-id-state-input" rows="5" placeholder='{"system": "Al-Fe", "observation_type": "HM_FORM", ...}'
+          style="width:100%;box-sizing:border-box;font-family:var(--font);font-size:11px;resize:vertical;"></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <button class="btn primary" onclick="sageComputeIds()">Compute IDs</button>
+        </div>
+      </div>
+      <div id="sage-id-result" style="font-size:11px;font-family:var(--font);white-space:pre-wrap;padding:8px;background:var(--bg2);border-radius:4px;border:1px solid var(--border);min-height:40px;"></div>
     </div>
   </div>
 </div>
@@ -1623,6 +1725,7 @@ function _applyWorkspaceView(workspace) {
   const orchidView = document.getElementById("orchid-view");
   const pfpView = document.getElementById("pfp-view");
   const benchmarkView = document.getElementById("benchmark-view");
+  const sageView = document.getElementById("sage-view");
   if (!iframe || !panels || !pfView) return;
   panels.style.display = workspace === "mf" ? "flex" : "none";
   iframe.style.display = workspace === "blade" ? "flex" : "none";
@@ -1631,6 +1734,7 @@ function _applyWorkspaceView(workspace) {
   if (orchidView) orchidView.style.display = workspace === "orchid" ? "flex" : "none";
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
   if (benchmarkView) benchmarkView.style.display = workspace === "benchmark" ? "flex" : "none";
+  if (sageView) sageView.style.display = workspace === "sage" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
   if (workspace === "blade") {
     iframe.src = "/blade/";
@@ -1644,6 +1748,7 @@ function _applyWorkspaceView(workspace) {
   if (workspace === "orchid") initOrchidWorkspace();
   if (workspace === "pfp") initPfpWorkspace();
   if (workspace === "benchmark") initBenchmarkWorkspace();
+  if (workspace === "sage") initSageWorkspace();
 }
 
 // ── PhaseForge (sqscal) workspace ──────────────────────────
@@ -4597,6 +4702,255 @@ async function bmPopulateTemplates() {
     });
   } catch {}
 }
+
+// ── ORCHID-SAGE workspace ──────────────────────────────────────────────────
+
+let _sageCurrentProtocol = null;
+
+async function initSageWorkspace() {
+  try {
+    const resp = await fetch("/api/sage/status");
+    const data = await resp.json();
+    const badge = document.getElementById("sage-install-badge");
+    const notInstalled = document.getElementById("sage-not-installed");
+    if (data.sage_installed) {
+      if (badge) { badge.textContent = "ready"; badge.style.background = "rgba(63,185,80,0.15)"; badge.style.color = "var(--green)"; }
+      if (notInstalled) notInstalled.style.display = "none";
+    } else {
+      if (badge) { badge.textContent = "not installed"; }
+      if (notInstalled) { notInstalled.textContent = data.hint || "orchid-sage not found"; notInstalled.style.display = "block"; }
+    }
+  } catch {}
+  sageSwitchTab("recipes");
+}
+
+function sageSwitchTab(tab) {
+  for (const t of ["recipes", "protocol", "steps", "validate", "ids"]) {
+    const el = document.getElementById(`sage-tab-${t}`);
+    const btn = document.getElementById(`sage-tab-btn-${t}`);
+    if (el) el.style.display = t === tab ? (t === "steps" ? "flex" : "flex") : "none";
+    if (btn) btn.classList.toggle("active", t === tab);
+  }
+}
+
+async function sageLoadLibrary() {
+  const status = document.getElementById("sage-recipes-status");
+  if (status) status.textContent = "Loading…";
+  try {
+    const resp = await fetch("/api/sage/model_library");
+    const data = await resp.json();
+    if (data.error) { if (status) status.textContent = data.error; return; }
+    _renderRecipes(data);
+    // Populate topic filter
+    const sel = document.getElementById("sage-model-topic");
+    if (sel) {
+      const topics = [...new Set((data.recipes || []).map(r => r.topic).filter(Boolean))].sort();
+      while (sel.options.length > 1) sel.remove(1);
+      topics.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; sel.appendChild(o); });
+    }
+  } catch (e) { if (status) status.textContent = String(e); }
+}
+
+async function sageModelSearch() {
+  const text = (document.getElementById("sage-model-search-input") || {}).value || "";
+  const topic = (document.getElementById("sage-model-topic") || {}).value || "";
+  if (!text && !topic) return;
+  try {
+    const url = `/api/sage/model_search?text=${encodeURIComponent(text)}${topic ? `&topic=${encodeURIComponent(topic)}` : ""}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.error) return;
+    _renderRecipes(data);
+  } catch {}
+}
+
+function _renderRecipes(data) {
+  const wrap = document.getElementById("sage-recipes-wrap");
+  const status = document.getElementById("sage-recipes-status");
+  const list = document.getElementById("sage-recipes-list");
+  const count = document.getElementById("sage-recipes-count");
+  if (!list) return;
+  const recipes = data.recipes || [];
+  if (status) status.textContent = "";
+  if (wrap) wrap.style.display = "flex";
+  if (count) count.textContent = `${recipes.length} recipe${recipes.length !== 1 ? "s" : ""}`;
+  list.innerHTML = "";
+  recipes.forEach(r => {
+    const card = document.createElement("div");
+    card.style.cssText = "background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;cursor:pointer;";
+    card.innerHTML = `<div style="font-weight:600;margin-bottom:2px;">${r.name || r.id || "?"}</div>
+      <div style="color:var(--text2);font-size:10px;">${r.topic || ""} ${r.description ? "· " + r.description : ""}</div>`;
+    card.onclick = () => _showRecipeDetail(r);
+    list.appendChild(card);
+  });
+}
+
+function _showRecipeDetail(r) {
+  const spec = document.getElementById("sage-spec-input");
+  if (spec) spec.value = JSON.stringify(r, null, 2);
+  sageSwitchTab("validate");
+}
+
+async function sageListProtocols() {
+  const listEl = document.getElementById("sage-protocol-list");
+  if (listEl) listEl.textContent = "Loading…";
+  try {
+    const resp = await fetch("/api/sage/list_protocols");
+    const data = await resp.json();
+    if (data.error) { if (listEl) listEl.textContent = data.error; return; }
+    const protocols = data.protocols || [];
+    if (listEl) {
+      listEl.innerHTML = "";
+      protocols.forEach(p => {
+        const item = document.createElement("div");
+        item.style.cssText = "padding:3px 6px;cursor:pointer;border-radius:3px;color:var(--accent);";
+        item.textContent = p.ref || p.title || p.path || "?";
+        item.title = `${p.type || ""} · ${p.status || ""}`;
+        item.onclick = () => sageLoadProtocol(p.ref);
+        listEl.appendChild(item);
+      });
+      if (!protocols.length) listEl.textContent = "No protocols found.";
+    }
+  } catch (e) { if (listEl) listEl.textContent = String(e); }
+}
+
+async function sageLoadProtocol(ref) {
+  _sageCurrentProtocol = ref;
+  sageSwitchTab("protocol");
+  const detail = document.getElementById("sage-protocol-detail");
+  if (detail) detail.textContent = "Loading…";
+  try {
+    const resp = await fetch(`/api/sage/get_protocol?ref=${encodeURIComponent(ref)}`);
+    const data = await resp.json();
+    if (detail) detail.innerHTML = `<pre style="white-space:pre-wrap;word-break:break-all;">${JSON.stringify(data, null, 2)}</pre>`;
+    // Also load steps
+    const lbl = document.getElementById("sage-steps-protocol-label");
+    if (lbl) lbl.textContent = ref;
+    sageLoadSteps(ref);
+  } catch (e) { if (detail) detail.textContent = String(e); }
+}
+
+async function sageLoadSteps(ref) {
+  const list = document.getElementById("sage-steps-list");
+  if (!list) return;
+  list.textContent = "Loading…";
+  try {
+    const resp = await fetch(`/api/sage/get_steps?ref=${encodeURIComponent(ref)}`);
+    const data = await resp.json();
+    if (data.error) { list.textContent = data.error; return; }
+    const sections = data.sections || [];
+    list.innerHTML = "";
+    sections.forEach(sec => {
+      const h = document.createElement("div");
+      h.style.cssText = "font-weight:600;padding:4px 0 2px;border-bottom:1px solid var(--border);margin-bottom:4px;";
+      h.textContent = sec.title || sec.id || "";
+      list.appendChild(h);
+      (sec.steps || []).forEach(step => {
+        const row = document.createElement("div");
+        row.style.cssText = "padding:3px 6px;display:flex;align-items:center;gap:6px;border-radius:3px;";
+        row.innerHTML = `<span style="font-family:var(--font);color:var(--accent);flex-shrink:0;">${step.id}</span>
+          <span style="color:var(--text2);">${step.title || step.description || ""}</span>`;
+        list.appendChild(row);
+      });
+    });
+    if (!sections.length) list.textContent = "No steps found.";
+  } catch (e) { list.textContent = String(e); }
+}
+
+async function sagePlanReproduction() {
+  if (!_sageCurrentProtocol) return;
+  const planEl = document.getElementById("sage-plan-result");
+  if (planEl) { planEl.style.display = "block"; planEl.textContent = "Planning…"; }
+  try {
+    const resp = await fetch("/api/sage/plan_reproduction", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ref: _sageCurrentProtocol, nproc: 4}),
+    });
+    const data = await resp.json();
+    if (planEl) planEl.textContent = JSON.stringify(data, null, 2);
+  } catch (e) { if (planEl) planEl.textContent = String(e); }
+}
+
+async function sageValidateSpec() {
+  const input = document.getElementById("sage-spec-input");
+  const result = document.getElementById("sage-validate-result");
+  if (!input || !result) return;
+  let spec;
+  try { spec = JSON.parse(input.value); } catch (e) { result.textContent = "JSON parse error: " + e; return; }
+  try {
+    const resp = await fetch("/api/sage/model_validate", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({spec}),
+    });
+    const data = await resp.json();
+    result.textContent = data.valid ? "✓ Valid" : "Errors:\n" + (data.errors || []).join("\n");
+    result.style.color = data.valid ? "var(--green)" : "var(--red)";
+  } catch (e) { result.textContent = String(e); }
+}
+
+async function sageAuditSpec() {
+  const input = document.getElementById("sage-spec-input");
+  const result = document.getElementById("sage-validate-result");
+  if (!input || !result) return;
+  let spec;
+  try { spec = JSON.parse(input.value); } catch (e) { result.textContent = "JSON parse error: " + e; return; }
+  try {
+    const resp = await fetch("/api/sage/model_audit", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({spec}),
+    });
+    const data = await resp.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    result.style.color = "";
+  } catch (e) { result.textContent = String(e); }
+}
+
+async function sageRecommendSpec() {
+  const input = document.getElementById("sage-spec-input");
+  const result = document.getElementById("sage-validate-result");
+  if (!input || !result) return;
+  let spec;
+  try { spec = JSON.parse(input.value); } catch (e) { result.textContent = "JSON parse error: " + e; return; }
+  try {
+    const resp = await fetch("/api/sage/model_recommend", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({spec}),
+    });
+    const data = await resp.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    result.style.color = "";
+  } catch (e) { result.textContent = String(e); }
+}
+
+async function sageValidateId() {
+  const input = document.getElementById("sage-id-input");
+  const result = document.getElementById("sage-id-result");
+  if (!input || !result) return;
+  const id = input.value.trim();
+  if (!id) return;
+  try {
+    const resp = await fetch(`/api/sage/validate_id?id=${encodeURIComponent(id)}`);
+    const data = await resp.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    result.style.color = data.valid ? "var(--green)" : "var(--red)";
+  } catch (e) { result.textContent = String(e); }
+}
+
+async function sageComputeIds() {
+  const input = document.getElementById("sage-id-state-input");
+  const result = document.getElementById("sage-id-result");
+  if (!input || !result) return;
+  let state;
+  try { state = JSON.parse(input.value); } catch (e) { result.textContent = "JSON parse error: " + e; return; }
+  try {
+    const resp = await fetch("/api/sage/compute_ids", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({state}),
+    });
+    const data = await resp.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    result.style.color = "";
+  } catch (e) { result.textContent = String(e); }
+}
+
+// ── Benchmark workspace ──────────────────────────────────────────────────
 
 async function bmLoadTemplate() {
   const sel = document.getElementById("bm-template-select");

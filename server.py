@@ -130,6 +130,33 @@ from phaseforge_studio.benchmark_adapter import (  # noqa: E402
 )
 from phaseforge_studio.benchmark_templates import list_templates, apply_template  # noqa: E402
 from phaseforge_studio.benchmark_report import build_json_export, build_text_report  # noqa: E402
+from phaseforge_studio.sage_adapter import (  # noqa: E402
+    check_sage_installed,
+    check_model_guide_installed,
+    sage_install_hint,
+    model_library,
+    model_search,
+    model_validate,
+    model_audit,
+    model_recommend,
+    model_plan,
+    model_compare,
+    list_protocols,
+    get_protocol,
+    get_steps,
+    get_step,
+    validate_document,
+    verify_inputs,
+    get_dashboard,
+    get_evidence_manifest,
+    plan_reproduction,
+    start_step,
+    step_status,
+    compare_outputs,
+    get_open_questions,
+    compute_ids,
+    validate_id,
+)
 
 _pfp_job = PfpJob()
 
@@ -462,6 +489,270 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             try:
                 self._json({"content": get_tdb_content(file_id), "file_id": file_id})
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        # ------------------------------------------------------------------
+        # ORCHID-SAGE routes
+        # ------------------------------------------------------------------
+
+        elif path == "/api/sage/status":
+            self._json({
+                "sage_installed": check_sage_installed(),
+                "model_guide_installed": check_model_guide_installed(),
+                "hint": sage_install_hint(),
+            })
+
+        elif path == "/api/sage/model_library":
+            try:
+                self._json(model_library())
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_search":
+            text = qs.get("text", [""])[0]
+            topic = qs.get("topic", [None])[0]
+            try:
+                self._json(model_search(text=text, topic=topic))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_validate":
+            body = self._body_json()
+            spec = body.get("spec")
+            if not isinstance(spec, dict):
+                self._json({"error": "spec object required"}, 400)
+                return
+            try:
+                errors = model_validate(spec)
+                self._json({"valid": not errors, "errors": errors})
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_audit":
+            body = self._body_json()
+            spec = body.get("spec")
+            if not isinstance(spec, dict):
+                self._json({"error": "spec object required"}, 400)
+                return
+            try:
+                self._json(model_audit(spec))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_recommend":
+            body = self._body_json()
+            spec = body.get("spec")
+            if not isinstance(spec, dict):
+                self._json({"error": "spec object required"}, 400)
+                return
+            try:
+                self._json(model_recommend(spec))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_plan":
+            body = self._body_json()
+            spec = body.get("spec")
+            if not isinstance(spec, dict):
+                self._json({"error": "spec object required"}, 400)
+                return
+            limit = int(body.get("limit", 20))
+            try:
+                self._json(model_plan(spec, limit=limit))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/model_compare":
+            body = self._body_json()
+            left, right = body.get("left"), body.get("right")
+            if not isinstance(left, dict) or not isinstance(right, dict):
+                self._json({"error": "left and right spec objects required"}, 400)
+                return
+            try:
+                self._json(model_compare(left, right))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/list_protocols":
+            try:
+                self._json(list_protocols())
+            except Exception as exc:
+                self._json({"error": str(exc), "protocols": []})
+
+        elif path == "/api/sage/get_protocol":
+            ref = qs.get("ref", [""])[0]
+            if not ref:
+                self._json({"error": "ref required"}, 400)
+                return
+            fields = qs.get("fields", ["summary"])[0]
+            try:
+                self._json(get_protocol(ref, fields=fields))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/get_steps":
+            ref = qs.get("ref", [""])[0]
+            if not ref:
+                self._json({"error": "ref required"}, 400)
+                return
+            section = qs.get("section", [None])[0]
+            try:
+                self._json(get_steps(ref, section=section))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/get_step":
+            ref = qs.get("ref", [""])[0]
+            step_id = qs.get("step_id", [""])[0]
+            if not ref or not step_id:
+                self._json({"error": "ref and step_id required"}, 400)
+                return
+            try:
+                self._json(get_step(ref, step_id))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/validate_document":
+            body = self._body_json()
+            doc = body.get("document")
+            try:
+                self._json(validate_document(document=doc))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/verify_inputs":
+            body = self._body_json()
+            ref = body.get("ref", "")
+            if not ref:
+                self._json({"error": "ref required"}, 400)
+                return
+            try:
+                self._json(verify_inputs(ref, detail=bool(body.get("detail", False))))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/dashboard":
+            assessment = qs.get("assessment", [""])[0]
+            if not assessment:
+                self._json({"error": "assessment required"}, 400)
+                return
+            try:
+                self._json(get_dashboard(
+                    assessment,
+                    section=qs.get("section", [None])[0],
+                    max_items=int(qs.get("max_items", ["50"])[0]),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/evidence_manifest":
+            assessment = qs.get("assessment", [""])[0]
+            if not assessment:
+                self._json({"error": "assessment required"}, 400)
+                return
+            try:
+                self._json(get_evidence_manifest(
+                    assessment,
+                    kind=qs.get("kind", [None])[0],
+                    limit=int(qs.get("limit", ["50"])[0]),
+                    offset=int(qs.get("offset", ["0"])[0]),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/plan_reproduction":
+            body = self._body_json()
+            ref = body.get("ref", "")
+            if not ref:
+                self._json({"error": "ref required"}, 400)
+                return
+            try:
+                self._json(plan_reproduction(
+                    ref,
+                    run_root=body.get("run_root"),
+                    python=body.get("python"),
+                    pfp=body.get("pfp"),
+                    nproc=int(body.get("nproc", 4)),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/start_step":
+            body = self._body_json()
+            ref = body.get("ref", "")
+            step_id = body.get("step_id", "")
+            run_root = body.get("run_root", "")
+            if not ref or not step_id or not run_root:
+                self._json({"error": "ref, step_id, and run_root required"}, 400)
+                return
+            try:
+                self._json(start_step(
+                    ref,
+                    step_id,
+                    run_root,
+                    confirm=bool(body.get("confirm", False)),
+                    allow_long=bool(body.get("allow_long", False)),
+                    env_extra=body.get("env_extra"),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/step_status":
+            body = self._body_json()
+            ref = body.get("ref", "")
+            run_root = body.get("run_root", "")
+            if not ref or not run_root:
+                self._json({"error": "ref and run_root required"}, 400)
+                return
+            try:
+                self._json(step_status(
+                    ref,
+                    run_root,
+                    step_id=body.get("step_id"),
+                    wait_s=float(body.get("wait_s", 0)),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/compare_outputs":
+            body = self._body_json()
+            ref = body.get("ref", "")
+            run_root = body.get("run_root", "")
+            if not ref or not run_root:
+                self._json({"error": "ref and run_root required"}, 400)
+                return
+            try:
+                self._json(compare_outputs(ref, run_root, python=body.get("python")))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/open_questions":
+            ids = qs.get("ids", None)
+            try:
+                self._json(get_open_questions(ids=ids if ids else None))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/compute_ids":
+            body = self._body_json()
+            try:
+                self._json(compute_ids(
+                    pid=body.get("pid"),
+                    locator=body.get("locator"),
+                    state=body.get("state"),
+                    observation_key=body.get("observation_key"),
+                ))
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
+        elif path == "/api/sage/validate_id":
+            orchid_id = qs.get("id", [""])[0]
+            if not orchid_id:
+                self._json({"error": "id required"}, 400)
+                return
+            try:
+                self._json(validate_id(orchid_id))
             except Exception as exc:
                 self._json({"error": str(exc)})
 
@@ -887,7 +1178,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid JSON"}, 400)
                 return
             workspace = body.get("workspace", "mf")
-            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark"):
+            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark", "sage"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
