@@ -27,15 +27,50 @@ from typing import Any
 
 _PAIPAI_BINARY = "paipai"
 
+# Candidate search paths in priority order (all checked before giving up).
+# The config key ``paipai_binary`` overrides everything.
+_PAIPAI_SEARCH: list[Path] = [
+    Path.home() / "bin" / "paipai",          # cmake --target install default
+    Path.home() / ".local" / "bin" / "paipai",
+    Path("/usr/local/bin/paipai"),
+    Path("/opt/local/bin/paipai"),
+]
+
+# Runtime override set by the server when config contains ``paipai_binary``
+_paipai_override: str | None = None
+
+
+def set_paipai_override(path: str | None) -> None:
+    """Set a runtime path override from config (called at server startup)."""
+    global _paipai_override
+    _paipai_override = path or None
+
 
 # ---------------------------------------------------------------------------
 # Detection / install hints
 # ---------------------------------------------------------------------------
 
 
+def _paipai_binary() -> str:
+    """Return the best available paipai binary path."""
+    if _paipai_override:
+        return _paipai_override
+    on_path = shutil.which(_PAIPAI_BINARY)
+    if on_path:
+        return on_path
+    for candidate in _PAIPAI_SEARCH:
+        if candidate.exists():
+            return str(candidate)
+    return _PAIPAI_BINARY
+
+
 def check_paipai_installed() -> bool:
-    """Return True if the ``paipai`` wrapper is on PATH."""
-    return shutil.which(_PAIPAI_BINARY) is not None
+    """Return True if paipai is resolvable."""
+    if _paipai_override:
+        return Path(_paipai_override).exists()
+    if shutil.which(_PAIPAI_BINARY) is not None:
+        return True
+    return any(c.exists() for c in _PAIPAI_SEARCH)
 
 
 def paipai_install_hint() -> str:
@@ -209,7 +244,7 @@ def run_paipai(
     workdir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        _PAIPAI_BINARY,
+        _paipai_binary(),
         "-i", str(workdir / "struc.in"),
         "--model", model,
         "--device", device,

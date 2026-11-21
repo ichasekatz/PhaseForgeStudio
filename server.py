@@ -143,6 +143,8 @@ from phaseforge_studio.benchmark_adapter import (  # noqa: E402
 )
 from phaseforge_studio.benchmark_templates import list_templates, apply_template  # noqa: E402
 from phaseforge_studio.benchmark_report import build_json_export, build_text_report  # noqa: E402
+from phaseforge_studio.deps_manager import all_status as deps_all_status, install_package as deps_install  # noqa: E402
+from phaseforge_studio.paipai import set_paipai_override  # noqa: E402
 from phaseforge_studio.sage_adapter import (  # noqa: E402
     check_sage_installed,
     check_model_guide_installed,
@@ -422,6 +424,27 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/workflows":
             self._json({"workflows": list_workflows()})
+
+        # ── PAIPAI status (GET) ───────────────────────────────────────────────
+        elif path == "/api/paipai_status":
+            from phaseforge_studio.paipai import _paipai as _pp, get_paipai_progress
+            wd = _pp.workdir
+            progress: dict[str, Any] = {}
+            if wd and wd.is_dir():
+                try:
+                    progress = get_paipai_progress(wd)
+                except Exception:
+                    pass
+            self._json({
+                "state": _pp.state,
+                "installed": check_paipai_installed(),
+                "log_tail": _pp.log[-60:],
+                "progress": progress,
+            })
+
+        # ── Dependency status / install ───────────────────────────────────────
+        elif path == "/api/deps/status":
+            self._json(deps_all_status(self.cfg))
 
         # ── ORCHID GET endpoints (query-string based) ────────────────────────
         elif path == "/api/orchid/status":
@@ -1197,7 +1220,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid JSON"}, 400)
                 return
             workspace = body.get("workspace", "mf")
-            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark", "sage"):
+            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark", "sage", "setup"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
@@ -1283,6 +1306,16 @@ class StudioHandler(BaseHTTPRequestHandler):
             tdb_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.tdb"))
             png_files = sorted(str(p.relative_to(workdir)) for p in workdir.rglob("*.png"))
             self._json({"tdb": tdb_files, "png": png_files})
+
+        # ── Dependency install (POST) ─────────────────────────────────────────
+        elif path == "/api/deps/install":
+            body = self._body_json()
+            key = body.get("key", "")
+            if not key:
+                self._json({"error": "key required"}, 400)
+                return
+            result = deps_install(key, self.cfg)
+            self._json(result)
 
         # ── PAIPAI endpoints ─────────────────────────────────────────────────
         elif path == "/api/paipai_status":
@@ -2650,6 +2683,9 @@ def main() -> None:
 
     StudioHandler.config_path = args.config
     StudioHandler.cfg = cfg
+
+    # Wire config-specified binary overrides
+    set_paipai_override(cfg.get("paipai_binary"))
 
     # Register universal file browser roots from config
     _root_keys = {
