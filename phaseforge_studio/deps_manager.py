@@ -7,6 +7,7 @@ auto-installed — their paths are configurable via config.json.
 Config keys recognised (all optional):
 
     paipai_binary            absolute path to paipai wrapper
+    blade_src                path to BLADE repo root (editable install preferred)
     materialsframework_src   path to MaterialsFramework/src
     phaseforgeplus_src       path to PhaseForgePlus/src
 """
@@ -49,6 +50,13 @@ _PY_PACKAGES: dict[str, dict[str, Any]] = {
         "label": "PhaseForgePlus",
         "optional": True,
         "source_key": "phaseforgeplus_src",
+    },
+    "blade": {
+        "import_name": "blade",
+        "pip_spec": "git+https://github.com/ichasekatz/BLADE",
+        "label": "BLADE",
+        "optional": True,
+        "source_key": "blade_src",
     },
     "ase": {
         "import_name": "ase",
@@ -106,6 +114,10 @@ def _guess_src(key: str) -> str | None:
     """Try to find a source directory adjacent to the GUI directory."""
     gui_dir = Path(__file__).parent.parent
     candidates: dict[str, list[Path]] = {
+        "blade": [
+            gui_dir.parent / "BLADE",
+            gui_dir.parent.parent / "BLADE",
+        ],
         "materialsframework": [
             gui_dir / "MaterialsFramework" / "src",
             gui_dir.parent / "MaterialsFramework" / "src",
@@ -203,8 +215,10 @@ def install_package(key: str, cfg: dict[str, Any] | None = None) -> dict[str, An
         src = cfg.get(src_key) or _guess_src(key)
         if src and Path(src).exists():
             # preferred: editable install from local source
-            src_parent = str(Path(src).parent)
-            cmd = [*_uv_or_pip(), "-e", src_parent]
+            # source_key may point to repo root (flat layout) or src/ subdir
+            src_path = Path(src)
+            install_root = src_path if (src_path / "pyproject.toml").exists() or (src_path / "setup.py").exists() else src_path.parent
+            cmd = [*_uv_or_pip(), "-e", str(install_root)]
         elif pip_spec:
             # fallback: install from PyPI
             cmd = [*_uv_or_pip(), pip_spec]
