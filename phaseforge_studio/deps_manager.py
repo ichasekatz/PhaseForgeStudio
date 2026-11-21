@@ -38,14 +38,14 @@ _PY_PACKAGES: dict[str, dict[str, Any]] = {
     },
     "materialsframework": {
         "import_name": "materialsframework",
-        "pip_spec": None,  # editable install from source — no PyPI spec
+        "pip_spec": "materialsframework",  # on PyPI; source editable install preferred
         "label": "MaterialsFramework",
         "optional": True,
         "source_key": "materialsframework_src",
     },
     "phaseforgeplus": {
         "import_name": "phaseforgeplus",
-        "pip_spec": None,
+        "pip_spec": "phaseforgeplus",  # on PyPI; source editable install preferred
         "label": "PhaseForgePlus",
         "optional": True,
         "source_key": "phaseforgeplus_src",
@@ -96,7 +96,8 @@ def check_py_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             src = cfg.get(src_key) or _guess_src(key)
             entry["source_path"] = src
             entry["source_found"] = bool(src and Path(src).exists())
-            entry["installable"] = bool(entry["source_found"])
+            # installable if source found OR PyPI spec available
+            entry["installable"] = bool(entry["source_found"]) or (meta.get("pip_spec") is not None)
         out.append(entry)
     return out
 
@@ -200,11 +201,15 @@ def install_package(key: str, cfg: dict[str, Any] | None = None) -> dict[str, An
 
     if src_key:
         src = cfg.get(src_key) or _guess_src(key)
-        if not src or not Path(src).exists():
-            return {"ok": False, "error": f"source not found for {key}; set {src_key!r} in config"}
-        # editable install from source directory
-        src_parent = str(Path(src).parent)
-        cmd = [*_uv_or_pip(), "-e", src_parent]
+        if src and Path(src).exists():
+            # preferred: editable install from local source
+            src_parent = str(Path(src).parent)
+            cmd = [*_uv_or_pip(), "-e", src_parent]
+        elif pip_spec:
+            # fallback: install from PyPI
+            cmd = [*_uv_or_pip(), pip_spec]
+        else:
+            return {"ok": False, "error": f"source not found for {key} and no PyPI spec available; set {src_key!r} in config"}
     elif pip_spec:
         cmd = [*_uv_or_pip(), pip_spec]
     else:
