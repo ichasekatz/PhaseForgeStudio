@@ -479,8 +479,66 @@ select option { background: var(--bg3); }
   <button class="btn primary" id="btn-run" onclick="runJob()">Run</button>
 </header>
 
-<!-- ── BLADE iframe (shown when BLADE workspace active) ──── -->
-<iframe id="blade-frame" src="/blade/" style="display:none;flex:1;border:none;width:100%;height:100%;background:var(--bg);"></iframe>
+<!-- ── BLADE workspace ───────────────────────────────────────────────────── -->
+<div id="blade-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+
+  <!-- Left: configure -->
+  <div style="width:260px;min-width:180px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:0;display:flex;flex-direction:column;">
+    <div class="panel-title">Configure BLADE</div>
+    <div id="blade-not-installed" style="display:none;padding:12px;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);border-radius:4px;margin:10px;font-size:11px;color:var(--red);white-space:pre-wrap;"></div>
+    <div class="section">
+      <div class="section-label">BLADE Root</div>
+      <div class="path-field">
+        <input id="blade-path1-input" type="text" placeholder="~/Research/BLADE" oninput="saveBladeCfg()">
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-label">TOML Config</div>
+      <div class="path-field">
+        <input id="blade-toml-input" type="text" placeholder="examples/full_framework.toml" oninput="saveBladeCfg()">
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-label">Device</div>
+      <select id="blade-device" onchange="saveBladeCfg()">
+        <option value="cpu">cpu</option>
+        <option value="cuda">cuda</option>
+      </select>
+    </div>
+    <div style="padding:10px;display:flex;gap:6px;">
+      <button class="btn primary" onclick="bladeRun()" style="flex:1;">Run</button>
+      <button class="btn" onclick="bladeRefreshStatus()" style="flex:1;">↻ Status</button>
+    </div>
+  </div>
+
+  <!-- Center: status + log -->
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span style="font-size:11px;color:var(--text2);">Status:</span>
+      <span id="blade-stage-badge" style="font-family:var(--font);font-size:11px;color:var(--accent);">idle</span>
+      <div style="flex:1;"></div>
+      <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="bladeClearLog()">Clear</button>
+    </div>
+    <div style="display:flex;gap:6px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span id="blade-stage-1" style="font-size:10px;color:var(--text2);padding:2px 6px;background:var(--bg3);border-radius:3px;">○ Stage 1</span>
+      <span id="blade-stage-2" style="font-size:10px;color:var(--text2);padding:2px 6px;background:var(--bg3);border-radius:3px;">○ Stage 2</span>
+      <span id="blade-stage-3" style="font-size:10px;color:var(--text2);padding:2px 6px;background:var(--bg3);border-radius:3px;">○ Stage 3</span>
+      <span id="blade-stage-4" style="font-size:10px;color:var(--text2);padding:2px 6px;background:var(--bg3);border-radius:3px;">○ Stage 4</span>
+    </div>
+    <div id="blade-log" style="flex:1;font-family:var(--font);font-size:10px;color:var(--text);line-height:1.6;overflow-y:auto;padding:10px 14px;white-space:pre-wrap;word-break:break-all;"></div>
+  </div>
+
+  <!-- Right: SQS + Compositions -->
+  <div style="width:280px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;">
+    <div class="panel-title" style="display:flex;align-items:center;">
+      <span style="flex:1;">Structures</span>
+      <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="bladeRefreshStatus()">↻</button>
+    </div>
+    <div id="blade-sqs-list" style="flex:0 0 auto;"></div>
+    <div style="padding:4px 8px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Compositions</div>
+    <div id="blade-comps-list" style="flex:1;"></div>
+  </div>
+</div>
 
 <!-- ── PhaseForge (sqscal) workspace ─────────────────────── -->
 <div id="pf-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
@@ -1748,14 +1806,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark" };
+  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", setup: "ws-tab-setup" };
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark" };
+    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", setup: "Setup" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -1775,19 +1833,19 @@ async function switchWorkspace(workspace) {
 }
 
 function _applyWorkspaceView(workspace) {
-  const iframe = document.getElementById("blade-frame");
   const panels = document.getElementById("pf-panels");
   const pfView = document.getElementById("pf-view");
+  const bladeView = document.getElementById("blade-view");
   const paipaiView = document.getElementById("paipai-view");
   const orchidView = document.getElementById("orchid-view");
   const pfpView = document.getElementById("pfp-view");
   const benchmarkView = document.getElementById("benchmark-view");
   const sageView = document.getElementById("sage-view");
   const setupView = document.getElementById("setup-view");
-  if (!iframe || !panels || !pfView) return;
+  if (!panels || !pfView) return;
   panels.style.display = workspace === "mf" ? "flex" : "none";
-  iframe.style.display = workspace === "blade" ? "flex" : "none";
   pfView.style.display = workspace === "pf" ? "flex" : "none";
+  if (bladeView) bladeView.style.display = workspace === "blade" ? "flex" : "none";
   if (paipaiView) paipaiView.style.display = workspace === "paipai" ? "flex" : "none";
   if (orchidView) orchidView.style.display = workspace === "orchid" ? "flex" : "none";
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
@@ -1795,13 +1853,7 @@ function _applyWorkspaceView(workspace) {
   if (sageView) sageView.style.display = workspace === "sage" ? "flex" : "none";
   if (setupView) setupView.style.display = workspace === "setup" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
-  if (workspace === "blade") {
-    iframe.src = "/blade/";
-    iframe.onload = function() {
-      // Send PFS config to BLADE iframe after load for config bridge
-      try { iframe.contentWindow.postMessage({type: "pfs-config", data: cfg}, "*"); } catch {}
-    };
-  }
+  if (workspace === "blade") initBladeWorkspace();
   if (workspace === "pf") { buildPfCommand(); loadPfOutputs(); pollPfStatus(); }
   if (workspace === "paipai") initPaipaiWorkspace();
   if (workspace === "orchid") initOrchidWorkspace();
@@ -3745,6 +3797,105 @@ async function loadMdTrajectory() {
   } catch(e) {
     alert("Failed to load trajectory: " + e.message);
   }
+}
+
+// ── BLADE workspace ──────────────────────────────────────────────────────────
+
+function initBladeWorkspace() {
+  setVal("blade-path1-input", cfg.blade_path1 || cfg.path1 || "");
+  setVal("blade-toml-input", cfg.blade_toml || "examples/full_framework.toml");
+  const dev = document.getElementById("blade-device");
+  if (dev) dev.value = cfg.blade_device || "cpu";
+  bladeRefreshStatus();
+}
+
+function saveBladeCfg() {
+  cfg.blade_path1 = document.getElementById("blade-path1-input").value.trim();
+  cfg.blade_toml  = document.getElementById("blade-toml-input").value.trim();
+  const dev = document.getElementById("blade-device");
+  if (dev) cfg.blade_device = dev.value;
+  saveConfig();
+}
+
+function bladeRun() {
+  fetch("/api/blade/run", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ blade_path1: cfg.blade_path1, blade_toml: cfg.blade_toml, device: cfg.blade_device || "cpu" })
+  }).then(r => r.json()).then(d => {
+    bladeAppendLog(d.message || d.error || JSON.stringify(d));
+  }).catch(e => bladeAppendLog("Error: " + e));
+}
+
+function bladeAppendLog(line) {
+  const el = document.getElementById("blade-log");
+  if (!el) return;
+  el.textContent += line + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function bladeClearLog() {
+  const el = document.getElementById("blade-log");
+  if (el) el.textContent = "";
+}
+
+function bladeRefreshStatus() {
+  const path1 = cfg.blade_path1 || cfg.path1 || "";
+  if (!path1) return;
+  fetch("/blade/api/status?path1=" + encodeURIComponent(path1))
+    .then(r => r.json()).then(d => {
+      _bladeRenderStages(d.stages || {});
+      _bladeRenderSqs(d.sqs || []);
+      _bladeRenderComps(d.comps || []);
+      fetch("/blade/api/log?path1=" + encodeURIComponent(path1))
+        .then(r => r.json()).then(ld => {
+          const el = document.getElementById("blade-log");
+          if (el && ld.lines) el.textContent = ld.lines.join("\n");
+        }).catch(() => {});
+    }).catch(e => bladeAppendLog("Status error: " + e));
+}
+
+function _bladeRenderStages(stages) {
+  const badge = document.getElementById("blade-stage-badge");
+  if (badge) {
+    const vals = Object.values(stages);
+    const running = vals.some(s => s === "running");
+    const done = vals.length && vals.every(s => s === "done");
+    badge.textContent = running ? "running" : done ? "done" : "idle";
+    badge.style.color = running ? "var(--accent)" : done ? "var(--green)" : "var(--text2)";
+  }
+  [1,2,3,4].forEach(i => {
+    const el = document.getElementById("blade-stage-" + i);
+    if (!el) return;
+    const st = stages["stage" + i] || "idle";
+    const dot = st === "done" ? "●" : st === "running" ? "◉" : "○";
+    const col = st === "done" ? "var(--green)" : st === "running" ? "var(--accent)" : "var(--text2)";
+    el.innerHTML = `<span style="color:${col}">${dot}</span> Stage ${i}`;
+  });
+}
+
+function _bladeRenderSqs(list) {
+  const el = document.getElementById("blade-sqs-list");
+  if (!el) return;
+  if (!list.length) { el.innerHTML = '<div style="color:var(--text2);font-size:11px;padding:8px;">No SQS found</div>'; return; }
+  el.innerHTML = list.slice(0, 30).map(s =>
+    `<div style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;">
+      <span style="color:var(--accent);">${s.name || s.lattice || "?"}</span>
+      <span style="float:right;color:var(--text2);">${s.n_atoms ?? ""}</span>
+    </div>`
+  ).join("");
+}
+
+function _bladeRenderComps(list) {
+  const el = document.getElementById("blade-comps-list");
+  if (!el) return;
+  if (!list.length) { el.innerHTML = '<div style="color:var(--text2);font-size:11px;padding:8px;">No compositions found</div>'; return; }
+  el.innerHTML = list.slice(0, 30).map(c =>
+    `<div style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;">
+      <span>${c.name || c.comp || "?"}</span>
+      <span style="float:right;color:var(--text2);">${c.status || ""}</span>
+    </div>`
+  ).join("");
 }
 
 // ── Panel resize + collapse (MF / BLADE workspaces) ────────────────────────
