@@ -153,6 +153,23 @@ header .spacer { flex: 0 0 4px; }
 }
 .ws-tab:hover { background: var(--bg3); color: var(--text); }
 .ws-tab.active { background: var(--bg3); color: var(--accent); font-weight: 600; }
+.ws-more-wrap { position: relative; }
+.ws-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.ws-more-menu .ws-tab { text-align: left; width: 100%; }
 .btn {
   padding: 4px 10px;
   border-radius: var(--radius);
@@ -451,9 +468,14 @@ select option { background: var(--bg3); }
     <button class="ws-tab" id="ws-tab-sage" onclick="switchWorkspace('sage')">ORCHID-SAGE</button>
     <button class="ws-tab active" id="ws-tab-pf" onclick="switchWorkspace('pf')">PhaseForge</button>
     <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
-    <button class="ws-tab" id="ws-tab-benchmark" onclick="switchWorkspace('benchmark')">Benchmark</button>
-    <button class="ws-tab" id="ws-tab-pipeline" onclick="switchWorkspace('pipeline')">Pipeline Maker</button>
-    <button class="ws-tab" id="ws-tab-setup" onclick="switchWorkspace('setup')">Setup</button>
+    <div class="ws-more-wrap" id="ws-more-wrap">
+      <button class="ws-tab" id="ws-tab-more" onclick="toggleWsMore(event)">More ▾</button>
+      <div class="ws-more-menu" id="ws-more-menu" style="display:none;">
+        <button class="ws-tab" id="ws-tab-benchmark" onclick="switchWorkspace('benchmark');closeWsMore()">Benchmark</button>
+        <button class="ws-tab" id="ws-tab-pipeline" onclick="switchWorkspace('pipeline');closeWsMore()">Pipeline Maker</button>
+        <button class="ws-tab" id="ws-tab-setup" onclick="switchWorkspace('setup');closeWsMore()">Setup</button>
+      </div>
+    </div>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
   <div class="status-pill" onclick="toggleJobHistory()" title="Click to show job history" style="cursor:pointer;">
@@ -1844,7 +1866,8 @@ async function initPipelineWorkspace() {
   if (!_pipelineStepTypes) {
     try {
       const r = await fetch("/api/pipeline/steps");
-      _pipelineStepTypes = await r.json();
+      const d = await r.json();
+      _pipelineStepTypes = d.steps || d;
     } catch { _pipelineStepTypes = {}; }
   }
   renderPipelinePalette();
@@ -2019,16 +2042,30 @@ function _renderPipelineStatus(data) {
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
   const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", pipeline: "ws-tab-pipeline", setup: "ws-tab-setup" };
+  const moreWorkspaces = new Set(["benchmark", "pipeline", "setup"]);
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
+  const moreBtn = document.getElementById("ws-tab-more");
+  if (moreBtn) moreBtn.classList.toggle("active", moreWorkspaces.has(workspace));
   const title = document.getElementById("header-title");
   if (title) {
     const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", pipeline: "Pipeline Maker", setup: "Setup" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
+
+function toggleWsMore(e) {
+  e.stopPropagation();
+  const menu = document.getElementById("ws-more-menu");
+  if (menu) menu.style.display = menu.style.display === "none" ? "flex" : "none";
+}
+function closeWsMore() {
+  const menu = document.getElementById("ws-more-menu");
+  if (menu) menu.style.display = "none";
+}
+document.addEventListener("click", () => closeWsMore());
 
 async function switchWorkspace(workspace) {
   if (cfg.active_workspace === workspace) return;
