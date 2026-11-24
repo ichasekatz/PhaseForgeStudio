@@ -29,7 +29,9 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             "slow_workers": 15,
             "pool_cap": 128,
         },
-        "outputs": ["workdir", "best_contcar"],
+        "outputs": ["workdir", "best_contcar", "elements"],
+        # auto_wire: config_key → upstream output_key to pull automatically
+        "auto_wire": {},
     },
     "mf_sqs": {
         "label": "MaterialsFramework: SQS + Energies",
@@ -46,6 +48,9 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             "T_step": 10,
         },
         "outputs": ["tdb_path", "system", "elements"],
+        "auto_wire": {
+            "elements": "elements",  # from paipai_search.elements if present
+        },
     },
     "orchid_search": {
         "label": "ORCHID: Experimental Data",
@@ -56,18 +61,27 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             "limit": 20,
         },
         "outputs": ["data_paths", "system"],
+        "auto_wire": {
+            "system": "system",    # from mf_sqs.system or blade_pipeline.system
+        },
     },
     "pfp_fit": {
         "label": "PhaseForgePlus: ESPEI Fit",
         "description": "Bayesian TDB fitting using computed + experimental data",
         "framework": "phaseforgeplus",
         "default_config": {
+            "computed_tdb": "",
+            "exp_data_dir": "",
             "method": "mcmc",
             "mcmc_steps": 1000,
             "chains": 4,
             "output_dir": "",
         },
         "outputs": ["output_tdb", "trace_path"],
+        "auto_wire": {
+            "computed_tdb": "tdb_path",    # from mf_sqs or blade_pipeline
+            "exp_data_dir": "data_paths",  # from orchid_search
+        },
     },
     "blade_pipeline": {
         "label": "BLADE: Full Pipeline",
@@ -78,7 +92,8 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             "blade_toml": "examples/full_framework.toml",
             "device": "cpu",
         },
-        "outputs": ["tdb_path"],
+        "outputs": ["tdb_path", "system"],
+        "auto_wire": {},
     },
     "sage_reproduce": {
         "label": "ORCHID-SAGE: Reproduce Protocol",
@@ -90,6 +105,7 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             "nproc": 4,
         },
         "outputs": ["run_root", "status"],
+        "auto_wire": {},
     },
 }
 

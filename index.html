@@ -1891,6 +1891,19 @@ function renderPipelinePalette() {
 
 function addPipelineStep(step_type, meta) {
   const cfg = Object.assign({}, meta.default_config || {});
+  // Auto-wire: for each rule {my_key: upstream_output_key}, find the last prior step
+  // that declares that output key and pre-fill with $step_N.key reference.
+  const autoWire = meta.auto_wire || {};
+  Object.entries(autoWire).forEach(([myKey, upstreamOutputKey]) => {
+    for (let n = _pipelineSteps.length - 1; n >= 0; n--) {
+      const prevType = _pipelineSteps[n].step_type;
+      const prevMeta = _pipelineStepTypes[prevType];
+      if (prevMeta && Array.isArray(prevMeta.outputs) && prevMeta.outputs.includes(upstreamOutputKey)) {
+        cfg[myKey] = `$step_${n}.${upstreamOutputKey}`;
+        break;
+      }
+    }
+  });
   _pipelineSteps.push({ step_type, config: cfg, label: meta.label });
   renderPipelineStepsList();
   renderPipelineConfigs();
@@ -1954,11 +1967,17 @@ function renderPipelineConfigs() {
     const body = document.createElement("div");
     body.style.cssText = "padding:10px 12px;display:flex;flex-direction:column;gap:6px;";
     Object.entries(s.config).forEach(([k, v]) => {
+      const displayVal = Array.isArray(v) ? v.join(", ") : v;
+      const isWired = typeof displayVal === "string" && displayVal.startsWith("$");
       const row = document.createElement("div");
       row.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;";
-      row.innerHTML = `<label style="width:120px;min-width:80px;color:var(--text2);">${k}</label>
-        <input value="${Array.isArray(v) ? v.join(", ") : v}" data-step="${i}" data-key="${k}"
-          style="flex:1;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;font-size:11px;color:var(--text);"
+      const inputStyle = isWired
+        ? "flex:1;padding:3px 6px;background:var(--bg);border:1px solid #2980b9;border-radius:3px;font-size:11px;color:#5dade2;font-style:italic;"
+        : "flex:1;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;font-size:11px;color:var(--text);";
+      const title = isWired ? ` title="Auto-wired from upstream step"` : "";
+      row.innerHTML = `<label style="width:120px;min-width:80px;color:var(--text2);">${k}${isWired ? ' <span style="color:#5dade2;font-size:9px;">⟳</span>' : ""}</label>
+        <input value="${displayVal}" data-step="${i}" data-key="${k}"
+          style="${inputStyle}"${title}
           oninput="updatePipelineCfg(${i},'${k}',this.value)">`;
       body.appendChild(row);
     });
