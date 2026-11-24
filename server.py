@@ -144,6 +144,12 @@ from phaseforge_studio.benchmark_adapter import (  # noqa: E402
 from phaseforge_studio.benchmark_templates import list_templates, apply_template  # noqa: E402
 from phaseforge_studio.benchmark_report import build_json_export, build_text_report  # noqa: E402
 from phaseforge_studio.deps_manager import all_status as deps_all_status, install_package as deps_install  # noqa: E402
+from phaseforge_studio.pipeline_maker import (  # noqa: E402
+    STEP_TYPES as pipeline_step_types,
+    cancel_pipeline,
+    get_pipeline_status,
+    start_pipeline,
+)
 from phaseforge_studio.paipai import set_paipai_override  # noqa: E402
 from phaseforge_studio.sage_adapter import (  # noqa: E402
     check_sage_installed,
@@ -445,6 +451,12 @@ class StudioHandler(BaseHTTPRequestHandler):
         # ── Dependency status / install ───────────────────────────────────────
         elif path == "/api/deps/status":
             self._json(deps_all_status(self.cfg))
+
+        # ── Pipeline Maker GET endpoints ─────────────────────────────────────
+        elif path == "/api/pipeline/steps":
+            self._json({"steps": pipeline_step_types})
+        elif path == "/api/pipeline/status":
+            self._json(get_pipeline_status())
 
         # ── ORCHID GET endpoints (query-string based) ────────────────────────
         elif path == "/api/orchid/status":
@@ -1220,7 +1232,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid JSON"}, 400)
                 return
             workspace = body.get("workspace", "mf")
-            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark", "sage", "setup"):
+            if workspace not in ("pf", "mf", "phaseforge", "blade", "paipai", "orchid", "pfp", "benchmark", "sage", "setup", "pipeline"):
                 self._json({"error": "unknown workspace"}, 400)
                 return
             self.cfg["active_workspace"] = workspace
@@ -1316,6 +1328,18 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             result = deps_install(key, self.cfg)
             self._json(result)
+
+        # ── Pipeline Maker POST endpoints ────────────────────────────────────
+        elif path == "/api/pipeline/start":
+            body = self._body_json()
+            steps = body.get("steps", [])
+            if not steps:
+                self._json({"error": "steps required"}, 400)
+                return
+            run_id = start_pipeline(steps)
+            self._json({"ok": True, "run_id": run_id})
+        elif path == "/api/pipeline/cancel":
+            self._json(cancel_pipeline())
 
         # ── PAIPAI endpoints ─────────────────────────────────────────────────
         elif path == "/api/paipai_status":

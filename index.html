@@ -452,6 +452,7 @@ select option { background: var(--bg3); }
     <button class="ws-tab active" id="ws-tab-pf" onclick="switchWorkspace('pf')">PhaseForge</button>
     <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
     <button class="ws-tab" id="ws-tab-benchmark" onclick="switchWorkspace('benchmark')">Benchmark</button>
+    <button class="ws-tab" id="ws-tab-pipeline" onclick="switchWorkspace('pipeline')">Pipeline Maker</button>
     <button class="ws-tab" id="ws-tab-setup" onclick="switchWorkspace('setup')">Setup</button>
   </div>
   <h1 id="header-title">PhaseForge <span>Studio</span></h1>
@@ -936,6 +937,36 @@ select option { background: var(--bg3); }
       <div class="section-label" style="margin-bottom:4px;">Log</div>
       <div id="pfp-log" style="font-family:monospace;font-size:0.78em;line-height:1.5;white-space:pre-wrap;"></div>
     </div>
+  </div>
+</div>
+
+<!-- ── Pipeline Maker workspace ──────────────────────────────────── -->
+<div id="pipeline-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
+  <!-- Left: Step palette + pipeline builder -->
+  <div style="width:280px;min-width:220px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:12px 10px;gap:10px;">
+    <div style="font-size:0.85em;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Available Steps</div>
+    <div id="pipeline-step-palette" style="display:flex;flex-direction:column;gap:6px;"></div>
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;">
+      <div style="font-size:0.85em;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Pipeline</div>
+      <div id="pipeline-steps-list" style="display:flex;flex-direction:column;gap:6px;min-height:40px;"></div>
+      <button onclick="clearPipeline()" style="margin-top:8px;padding:4px 10px;font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--text2);">Clear</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;flex-direction:column;gap:6px;">
+      <button onclick="runPipeline()" id="pipeline-run-btn" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">Run Pipeline</button>
+      <button onclick="cancelPipeline()" id="pipeline-cancel-btn" style="display:none;padding:7px 14px;background:#c0392b;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Center: Per-step config + status -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:0.78em;color:var(--text2);" id="pipeline-status-bar">No pipeline running.</div>
+    <div id="pipeline-step-configs" style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:12px;"></div>
+  </div>
+
+  <!-- Right: Live log -->
+  <div style="width:340px;min-width:200px;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:0.78em;font-weight:600;color:var(--text2);">Pipeline Log</div>
+    <div id="pipeline-log" style="flex:1;overflow-y:auto;padding:8px 12px;font-family:monospace;font-size:0.75em;line-height:1.5;white-space:pre-wrap;"></div>
   </div>
 </div>
 
@@ -1804,16 +1835,197 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMdCalculators();
 });
 
+// ── Pipeline Maker ──────────────────────────────────────────
+let _pipelineSteps = [];   // [{step_type, config, label}]
+let _pipelineStepTypes = null;
+let _pipelinePollTimer = null;
+
+async function initPipelineWorkspace() {
+  if (!_pipelineStepTypes) {
+    try {
+      const r = await fetch("/api/pipeline/steps");
+      _pipelineStepTypes = await r.json();
+    } catch { _pipelineStepTypes = {}; }
+  }
+  renderPipelinePalette();
+  renderPipelineStepsList();
+  renderPipelineConfigs();
+  pipelinePollStatus();
+}
+
+function renderPipelinePalette() {
+  const palette = document.getElementById("pipeline-step-palette");
+  if (!palette || !_pipelineStepTypes) return;
+  palette.innerHTML = "";
+  Object.entries(_pipelineStepTypes).forEach(([key, meta]) => {
+    const btn = document.createElement("button");
+    btn.style.cssText = "text-align:left;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:12px;color:var(--text);";
+    btn.innerHTML = `<strong>${meta.label}</strong><br><span style="color:var(--text2);font-size:11px;">${meta.description || ""}</span>`;
+    btn.onclick = () => addPipelineStep(key, meta);
+    palette.appendChild(btn);
+  });
+}
+
+function addPipelineStep(step_type, meta) {
+  const cfg = Object.assign({}, meta.default_config || {});
+  _pipelineSteps.push({ step_type, config: cfg, label: meta.label });
+  renderPipelineStepsList();
+  renderPipelineConfigs();
+}
+
+function removePipelineStep(idx) {
+  _pipelineSteps.splice(idx, 1);
+  renderPipelineStepsList();
+  renderPipelineConfigs();
+}
+
+function movePipelineStep(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= _pipelineSteps.length) return;
+  [_pipelineSteps[idx], _pipelineSteps[j]] = [_pipelineSteps[j], _pipelineSteps[idx]];
+  renderPipelineStepsList();
+  renderPipelineConfigs();
+}
+
+function clearPipeline() {
+  _pipelineSteps = [];
+  renderPipelineStepsList();
+  renderPipelineConfigs();
+}
+
+function renderPipelineStepsList() {
+  const list = document.getElementById("pipeline-steps-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (_pipelineSteps.length === 0) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:11px;text-align:center;padding:8px 0;">Add steps from the palette above</div>';
+    return;
+  }
+  _pipelineSteps.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:4px;padding:4px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;font-size:11px;";
+    row.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${s.label}">
+      <span style="color:var(--text2);margin-right:4px;">${i + 1}.</span>${s.label}
+    </span>
+    <button onclick="movePipelineStep(${i},-1)" style="background:none;border:none;cursor:pointer;color:var(--text2);padding:0 2px;">▲</button>
+    <button onclick="movePipelineStep(${i},1)" style="background:none;border:none;cursor:pointer;color:var(--text2);padding:0 2px;">▼</button>
+    <button onclick="removePipelineStep(${i})" style="background:none;border:none;cursor:pointer;color:#c0392b;padding:0 2px;">✕</button>`;
+    list.appendChild(row);
+  });
+}
+
+function renderPipelineConfigs() {
+  const container = document.getElementById("pipeline-step-configs");
+  if (!container) return;
+  container.innerHTML = "";
+  if (_pipelineSteps.length === 0) {
+    container.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:20px;">Add steps from the left panel to configure the pipeline.</div>';
+    return;
+  }
+  _pipelineSteps.forEach((s, i) => {
+    const card = document.createElement("div");
+    card.style.cssText = "border:1px solid var(--border);border-radius:6px;overflow:hidden;";
+    const hdr = document.createElement("div");
+    hdr.style.cssText = "padding:8px 12px;background:var(--bg3);font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;";
+    hdr.innerHTML = `<span style="color:var(--text2);">${i + 1}.</span> ${s.label}`;
+    const body = document.createElement("div");
+    body.style.cssText = "padding:10px 12px;display:flex;flex-direction:column;gap:6px;";
+    Object.entries(s.config).forEach(([k, v]) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;";
+      row.innerHTML = `<label style="width:120px;min-width:80px;color:var(--text2);">${k}</label>
+        <input value="${Array.isArray(v) ? v.join(", ") : v}" data-step="${i}" data-key="${k}"
+          style="flex:1;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;font-size:11px;color:var(--text);"
+          oninput="updatePipelineCfg(${i},'${k}',this.value)">`;
+      body.appendChild(row);
+    });
+    card.appendChild(hdr);
+    card.appendChild(body);
+    container.appendChild(card);
+  });
+}
+
+function updatePipelineCfg(stepIdx, key, raw) {
+  if (!_pipelineSteps[stepIdx]) return;
+  const original = _pipelineSteps[stepIdx].config[key];
+  if (Array.isArray(original)) {
+    _pipelineSteps[stepIdx].config[key] = raw.split(",").map(x => x.trim()).filter(Boolean);
+  } else if (typeof original === "number") {
+    _pipelineSteps[stepIdx].config[key] = isNaN(Number(raw)) ? raw : Number(raw);
+  } else {
+    _pipelineSteps[stepIdx].config[key] = raw;
+  }
+}
+
+async function runPipeline() {
+  if (_pipelineSteps.length === 0) { alert("Add at least one step."); return; }
+  document.getElementById("pipeline-run-btn").style.display = "none";
+  document.getElementById("pipeline-cancel-btn").style.display = "";
+  document.getElementById("pipeline-log").textContent = "";
+  document.getElementById("pipeline-status-bar").textContent = "Starting pipeline…";
+  try {
+    await fetch("/api/pipeline/start", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ steps: _pipelineSteps }),
+    });
+  } catch (e) {
+    document.getElementById("pipeline-status-bar").textContent = "Failed to start: " + e;
+    document.getElementById("pipeline-run-btn").style.display = "";
+    document.getElementById("pipeline-cancel-btn").style.display = "none";
+    return;
+  }
+  pipelinePollStatus();
+}
+
+async function cancelPipeline() {
+  await fetch("/api/pipeline/cancel", { method: "POST", headers: {"Content-Type": "application/json"}, body: "{}" });
+}
+
+async function pipelinePollStatus() {
+  clearTimeout(_pipelinePollTimer);
+  try {
+    const r = await fetch("/api/pipeline/status");
+    const data = await r.json();
+    _renderPipelineStatus(data);
+    if (data.status === "running") {
+      _pipelinePollTimer = setTimeout(pipelinePollStatus, 1000);
+    } else {
+      document.getElementById("pipeline-run-btn").style.display = "";
+      document.getElementById("pipeline-cancel-btn").style.display = "none";
+    }
+  } catch {}
+}
+
+function _renderPipelineStatus(data) {
+  const bar = document.getElementById("pipeline-status-bar");
+  const log = document.getElementById("pipeline-log");
+  if (!bar || !log) return;
+  const statusColors = { running: "var(--accent)", done: "#27ae60", error: "#c0392b", cancelled: "var(--text2)", idle: "var(--text2)" };
+  bar.innerHTML = `Status: <strong style="color:${statusColors[data.status] || 'var(--text2)'};">${data.status}</strong>`;
+  if (!data.steps || data.steps.length === 0) return;
+  const lines = [];
+  data.steps.forEach(s => {
+    const icon = {pending:"○", running:"◉", done:"✓", error:"✗", skipped:"—"}[s.status] || "○";
+    const elapsed = s.elapsed != null ? ` (${s.elapsed}s)` : "";
+    lines.push(`${icon} [${s.label}]${elapsed} — ${s.status}`);
+    if (s.log && s.log.length) lines.push(...s.log.slice(-10));
+    lines.push("");
+  });
+  log.textContent = lines.join("\n");
+  log.scrollTop = log.scrollHeight;
+}
+
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", setup: "ws-tab-setup" };
+  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", pipeline: "ws-tab-pipeline", setup: "ws-tab-setup" };
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", setup: "Setup" };
+    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", pipeline: "Pipeline Maker", setup: "Setup" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -1851,6 +2063,8 @@ function _applyWorkspaceView(workspace) {
   if (pfpView) pfpView.style.display = workspace === "pfp" ? "flex" : "none";
   if (benchmarkView) benchmarkView.style.display = workspace === "benchmark" ? "flex" : "none";
   if (sageView) sageView.style.display = workspace === "sage" ? "flex" : "none";
+  const pipelineView = document.getElementById("pipeline-view");
+  if (pipelineView) pipelineView.style.display = workspace === "pipeline" ? "flex" : "none";
   if (setupView) setupView.style.display = workspace === "setup" ? "flex" : "none";
   if (workspace === "mf") refreshAll();
   if (workspace === "blade") initBladeWorkspace();
@@ -1860,6 +2074,7 @@ function _applyWorkspaceView(workspace) {
   if (workspace === "pfp") initPfpWorkspace();
   if (workspace === "benchmark") initBenchmarkWorkspace();
   if (workspace === "sage") initSageWorkspace();
+  if (workspace === "pipeline") initPipelineWorkspace();
   if (workspace === "setup") setupRefresh();
 }
 
