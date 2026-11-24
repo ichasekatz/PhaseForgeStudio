@@ -1331,7 +1331,7 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         # ── Pipeline Maker POST endpoints ────────────────────────────────────
         elif path == "/api/pipeline/start":
-            body = self._body_json()
+            body = json.loads(self._read_body())
             steps = body.get("steps", [])
             if not steps:
                 self._json({"error": "steps required"}, 400)
