@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("numpy", reason="numpy required for benchmark_stats tests")
+
 from phaseforge_studio.benchmark_stats import (
     analyse_energy_benchmark,
     bootstrap_ci,

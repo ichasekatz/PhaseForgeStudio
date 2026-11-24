@@ -17,7 +17,15 @@ try:
 except ImportError:
     _has_ase = False
 
+try:
+    import numpy  # noqa: F401
+
+    _has_numpy = True
+except ImportError:
+    _has_numpy = False
+
 _needs_ase = pytest.mark.skipif(not _has_ase, reason="ase not installed")
+_needs_numpy = pytest.mark.skipif(not _has_numpy, reason="numpy not installed")
 
 
 class TestAnalyzerInfo:
@@ -46,6 +54,7 @@ class TestAnalyzerInfo:
 
 
 class TestJsonDefault:
+    @_needs_numpy
     def test_numpy_float(self) -> None:
         import numpy as np
 
@@ -53,6 +62,7 @@ class TestJsonDefault:
         assert isinstance(val, float)
         assert abs(val - 3.14) < 1e-10
 
+    @_needs_numpy
     def test_numpy_int(self) -> None:
         import numpy as np
 
@@ -60,6 +70,7 @@ class TestJsonDefault:
         assert isinstance(val, int)
         assert val == 42
 
+    @_needs_numpy
     def test_numpy_array(self) -> None:
         import numpy as np
 
@@ -67,6 +78,7 @@ class TestJsonDefault:
         val = _json_default(arr)
         assert val == [1.0, 2.0, 3.0]
 
+    @_needs_numpy
     def test_unknown_type_raises(self) -> None:
         with pytest.raises(TypeError):
             _json_default(object())

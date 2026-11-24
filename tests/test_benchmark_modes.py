@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy", reason="numpy required for benchmark_modes tests")
 
 from phaseforge_studio.benchmark_modes import (
     _convex_hull,

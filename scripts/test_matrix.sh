@@ -46,10 +46,10 @@ build_minimal_venv() {
     echo "ERROR: uv not found — install uv to run minimal env tests" >&2
     exit 1
   fi
-  uv venv --python 3.12 "$MINIMAL_VENV" --seed
+  uv venv --python 3.12 "$MINIMAL_VENV"
   # Install only: pytest + the package itself (no optional deps)
-  "$MINIMAL_VENV/bin/uv" pip install pytest
-  "$MINIMAL_VENV/bin/uv" pip install -e "$GUI_DIR" --no-deps
+  uv pip install --python "$MINIMAL_VENV/bin/python" pytest
+  uv pip install --python "$MINIMAL_VENV/bin/python" -e "$GUI_DIR" --no-deps
   echo "Minimal venv ready."
 }
 
