@@ -516,7 +516,7 @@ select option { background: var(--bg3); }
 <div id="blade-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
 
   <!-- Left: configure -->
-  <div style="width:260px;min-width:180px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:0;display:flex;flex-direction:column;">
+  <div style="width:280px;min-width:200px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;padding:0;display:flex;flex-direction:column;">
     <div class="panel-title">Configure BLADE</div>
     <div id="blade-not-installed" style="display:none;padding:12px;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);border-radius:4px;margin:10px;font-size:11px;color:var(--red);white-space:pre-wrap;"></div>
     <div class="section">
@@ -526,21 +526,69 @@ select option { background: var(--bg3); }
       </div>
     </div>
     <div class="section">
-      <div class="section-label">TOML Config</div>
-      <div class="path-field">
-        <input id="blade-toml-input" type="text" placeholder="examples/full_framework.toml" oninput="saveBladeCfg()">
+      <div class="section-label">Elements</div>
+      <div class="tag-input-wrap" id="blade-elements-wrap" onclick="document.getElementById('blade-elem-input').focus()" style="min-height:28px;cursor:text;">
+        <input id="blade-elem-input" type="text" placeholder="Add element…" autocomplete="off"
+               onkeydown="handleBladeElemKey(event)" style="width:auto;min-width:80px;">
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px;">Enter or comma to add</div>
+    </div>
+    <div class="section">
+      <div class="section-label">Lattices</div>
+      <div id="blade-lattice-checks" style="display:flex;flex-wrap:wrap;gap:4px;padding:2px 0;">
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="FCC_A1" onchange="saveBladeCfg()" checked> FCC_A1</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="BCC_A2" onchange="saveBladeCfg()" checked> BCC_A2</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="HCP_A3" onchange="saveBladeCfg()"> HCP_A3</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="C14_LAVES" onchange="saveBladeCfg()"> C14_LAVES</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="SIGMA" onchange="saveBladeCfg()"> SIGMA</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="L12_FCC" onchange="saveBladeCfg()"> L12_FCC</label>
       </div>
     </div>
     <div class="section">
+      <div class="section-label">Model</div>
+      <select id="blade-model" onchange="saveBladeCfg()" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:11px;">
+        <option value="GRACE-2L-OMAT">GRACE-2L-OMAT</option>
+        <option value="M3GNet">M3GNet</option>
+        <option value="CHGNet">CHGNet</option>
+        <option value="MACE-MP-0">MACE-MP-0</option>
+      </select>
+    </div>
+    <div class="section">
       <div class="section-label">Device</div>
-      <select id="blade-device" onchange="saveBladeCfg()">
+      <select id="blade-device" onchange="saveBladeCfg()" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 6px;font-size:11px;">
         <option value="cpu">cpu</option>
         <option value="cuda">cuda</option>
       </select>
     </div>
-    <div style="padding:10px;display:flex;gap:6px;">
-      <button class="btn primary" onclick="bladeRun()" style="flex:1;">Run</button>
-      <button class="btn" onclick="bladeRefreshStatus()" style="flex:1;">↻ Status</button>
+    <div class="section">
+      <div class="section-label">Force Convergence (fmax)</div>
+      <input id="blade-fmax" type="number" value="0.05" step="0.01" min="0.001" oninput="saveBladeCfg()" style="width:100%;box-sizing:border-box;">
+    </div>
+    <div class="section">
+      <div class="section-label">Temperature Range (K)</div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <input id="blade-tmin" type="number" value="298" step="1" oninput="saveBladeCfg()" style="flex:1;min-width:0;" placeholder="T_min">
+        <span style="color:var(--text2);font-size:11px;">–</span>
+        <input id="blade-tmax" type="number" value="6000" step="100" oninput="saveBladeCfg()" style="flex:1;min-width:0;" placeholder="T_max">
+        <span style="color:var(--text2);font-size:11px;">step</span>
+        <input id="blade-tstep" type="number" value="10" step="1" oninput="saveBladeCfg()" style="width:48px;min-width:0;" placeholder="step">
+      </div>
+    </div>
+    <div class="section">
+      <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="toggleBladeAdvanced()">
+        <span style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;">Advanced</span>
+        <span id="blade-adv-arrow" style="font-size:10px;color:var(--text2);">▶</span>
+      </div>
+      <div id="blade-advanced" style="display:none;margin-top:6px;">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px;">Custom TOML (overrides form above)</div>
+        <div class="path-field">
+          <input id="blade-toml-input" type="text" placeholder="examples/full_framework.toml" oninput="saveBladeCfg()">
+        </div>
+      </div>
+    </div>
+    <div style="padding:10px;display:flex;gap:6px;margin-top:auto;">
+      <button class="btn primary" onclick="bladeRun()" style="flex:1;">▶ Generate &amp; Run</button>
+      <button class="btn" onclick="bladeRefreshStatus()" title="Refresh status">↻</button>
     </div>
   </div>
 
@@ -1551,8 +1599,8 @@ select option { background: var(--bg3); }
         <input type="text" id="blade-path1-input" placeholder="~/Research/BLADE" onchange="syncConfig()">
       </div>
       <div class="field">
-        <label>BLADE TOML config</label>
-        <input type="text" id="blade-toml-input" placeholder="examples/full_framework.toml" onchange="syncConfig()">
+        <label>BLADE TOML config (custom override)</label>
+        <input type="text" id="blade-toml-cfg-input" placeholder="examples/full_framework.toml" onchange="syncConfig()">
       </div>
       <div class="field">
         <label>PhaseForge workdir</label>
@@ -2409,7 +2457,7 @@ function applyConfigToForm() {
   document.getElementById("open-calphad-chk").checked = cfg.open_calphad === true;
   setVal("path1-input", cfg.path1 || "");
   setVal("blade-path1-input", cfg.blade_path1 || cfg.path1 || "");
-  setVal("blade-toml-input", cfg.blade_toml || "examples/full_framework.toml");
+  setVal("blade-toml-cfg-input", cfg.blade_toml || "");
   setVal("pf-workdir-cfg-input", cfg.pf_workdir || "");
   setVal("path2-input", cfg.path2 || "");
   document.getElementById("track-traj").checked = cfg.track_trajectory !== false;
@@ -2459,7 +2507,7 @@ async function syncConfig() {
   cfg.open_calphad = document.getElementById("open-calphad-chk").checked;
   cfg.path1 = document.getElementById("path1-input").value;
   cfg.blade_path1 = document.getElementById("blade-path1-input").value;
-  cfg.blade_toml = document.getElementById("blade-toml-input").value;
+  cfg.blade_toml = document.getElementById("blade-toml-cfg-input")?.value || document.getElementById("blade-toml-input")?.value || "";
   cfg.pf_workdir = document.getElementById("pf-workdir-cfg-input").value;
   cfg.path2 = document.getElementById("path2-input").value;
   cfg.track_trajectory = document.getElementById("track-traj").checked;
@@ -4135,29 +4183,130 @@ async function loadMdTrajectory() {
 
 // ── BLADE workspace ──────────────────────────────────────────────────────────
 
+let _bladeElements = [];
+
 function initBladeWorkspace() {
   setVal("blade-path1-input", cfg.blade_path1 || cfg.path1 || "");
-  setVal("blade-toml-input", cfg.blade_toml || "examples/full_framework.toml");
+  setVal("blade-toml-input", cfg.blade_toml || "");
   const dev = document.getElementById("blade-device");
   if (dev) dev.value = cfg.blade_device || "cpu";
+  const model = document.getElementById("blade-model");
+  if (model) model.value = cfg.blade_model || "GRACE-2L-OMAT";
+  setVal("blade-fmax", cfg.blade_fmax ?? 0.05);
+  setVal("blade-tmin", cfg.blade_tmin ?? 298);
+  setVal("blade-tmax", cfg.blade_tmax ?? 6000);
+  setVal("blade-tstep", cfg.blade_tstep ?? 10);
+  _bladeElements = cfg.blade_elements || [];
+  _bladeRenderElementTags();
+  // Restore lattice checkboxes
+  const lattices = cfg.blade_lattices || ["FCC_A1", "BCC_A2"];
+  document.querySelectorAll("#blade-lattice-checks input[type=checkbox]").forEach(cb => {
+    cb.checked = lattices.includes(cb.value);
+  });
   bladeRefreshStatus();
 }
 
+function _bladeRenderElementTags() {
+  const wrap = document.getElementById("blade-elements-wrap");
+  if (!wrap) return;
+  wrap.querySelectorAll(".elem-tag").forEach(t => t.remove());
+  const input = document.getElementById("blade-elem-input");
+  _bladeElements.forEach(el => {
+    const tag = document.createElement("span");
+    tag.className = "elem-tag";
+    tag.style.cssText = "display:inline-flex;align-items:center;gap:3px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:11px;margin:1px;";
+    tag.innerHTML = `${el} <span onclick="removeBladeElement('${el}')" style="cursor:pointer;color:var(--text2);font-size:10px;">✕</span>`;
+    wrap.insertBefore(tag, input);
+  });
+}
+
+function handleBladeElemKey(e) {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault();
+    const val = e.target.value.replace(/,/g, "").trim();
+    if (val) addBladeElement(val);
+    e.target.value = "";
+  } else if (e.key === "Backspace" && !e.target.value && _bladeElements.length) {
+    removeBladeElement(_bladeElements[_bladeElements.length - 1]);
+  }
+}
+
+function addBladeElement(el) {
+  el = el.charAt(0).toUpperCase() + el.slice(1).toLowerCase();
+  if (!_bladeElements.includes(el)) {
+    _bladeElements.push(el);
+    cfg.blade_elements = _bladeElements;
+    _bladeRenderElementTags();
+    saveConfig();
+  }
+}
+
+function removeBladeElement(el) {
+  _bladeElements = _bladeElements.filter(e => e !== el);
+  cfg.blade_elements = _bladeElements;
+  _bladeRenderElementTags();
+  saveConfig();
+}
+
+function toggleBladeAdvanced() {
+  const adv = document.getElementById("blade-advanced");
+  const arrow = document.getElementById("blade-adv-arrow");
+  if (!adv) return;
+  const open = adv.style.display === "none";
+  adv.style.display = open ? "block" : "none";
+  if (arrow) arrow.textContent = open ? "▼" : "▶";
+}
+
 function saveBladeCfg() {
-  cfg.blade_path1 = document.getElementById("blade-path1-input").value.trim();
-  cfg.blade_toml  = document.getElementById("blade-toml-input").value.trim();
+  cfg.blade_path1 = document.getElementById("blade-path1-input")?.value.trim() || "";
+  cfg.blade_toml = document.getElementById("blade-toml-input")?.value.trim() || "";
   const dev = document.getElementById("blade-device");
   if (dev) cfg.blade_device = dev.value;
+  const model = document.getElementById("blade-model");
+  if (model) cfg.blade_model = model.value;
+  cfg.blade_fmax = parseFloat(document.getElementById("blade-fmax")?.value) || 0.05;
+  cfg.blade_tmin = parseInt(document.getElementById("blade-tmin")?.value) || 298;
+  cfg.blade_tmax = parseInt(document.getElementById("blade-tmax")?.value) || 6000;
+  cfg.blade_tstep = parseInt(document.getElementById("blade-tstep")?.value) || 10;
+  const lattices = [];
+  document.querySelectorAll("#blade-lattice-checks input[type=checkbox]:checked").forEach(cb => lattices.push(cb.value));
+  cfg.blade_lattices = lattices;
+  cfg.blade_elements = _bladeElements;
   saveConfig();
 }
 
 function bladeRun() {
+  const path1 = cfg.blade_path1 || "";
+  if (!path1) { bladeAppendLog("ERROR: Set a BLADE Root path first."); return; }
+  if (!_bladeElements.length) { bladeAppendLog("ERROR: Add at least one element."); return; }
+  const lattices = cfg.blade_lattices || ["FCC_A1", "BCC_A2"];
+  if (!lattices.length) { bladeAppendLog("ERROR: Select at least one lattice."); return; }
+  bladeClearLog();
+  bladeAppendLog("Generating TOML config…");
   fetch("/api/blade/run", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ blade_path1: cfg.blade_path1, blade_toml: cfg.blade_toml, device: cfg.blade_device || "cpu" })
+    body: JSON.stringify({
+      blade_path1: path1,
+      elements: _bladeElements,
+      lattices: lattices,
+      model: cfg.blade_model || "GRACE-2L-OMAT",
+      device: cfg.blade_device || "cpu",
+      fmax: cfg.blade_fmax ?? 0.05,
+      T_min: cfg.blade_tmin ?? 298,
+      T_max: cfg.blade_tmax ?? 6000,
+      T_step: cfg.blade_tstep ?? 10,
+      blade_toml: cfg.blade_toml || null,
+    })
   }).then(r => r.json()).then(d => {
-    bladeAppendLog(d.message || d.error || JSON.stringify(d));
+    if (d.error) { bladeAppendLog("ERROR: " + d.error); return; }
+    bladeAppendLog(d.message || "Done.");
+    if (d.toml_content) {
+      bladeAppendLog("\n─── Generated TOML ───\n" + d.toml_content);
+    }
+    if (d.run_cmd) {
+      bladeAppendLog("\n─── Run command ───\n" + d.run_cmd);
+    }
   }).catch(e => bladeAppendLog("Error: " + e));
 }
 
@@ -4607,7 +4756,7 @@ async function checkOrchidStatus() {
     if (hint) {
       if (!d.mcp_available) {
         hint.style.display = "block";
-        hint.textContent = "orchid-mcp not installed — using HTTP fallback.\nInstall: " + (d.install_hint || "pip install orchid-mcp");
+        hint.textContent = "orchid-mcp not installed — using HTTP fallback.\nInstall orchid-mcp from the Setup tab for full functionality.";
       } else {
         hint.style.display = "none";
       }

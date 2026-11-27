@@ -136,6 +136,10 @@ def _fetch_json(url: str, timeout: int = 20) -> Any:
             data = json.loads(raw.decode())
         cp.write_text(json.dumps(data))
         return data
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 404):
+            return None  # endpoint doesn't exist — callers treat None as empty
+        raise RuntimeError(f"ORCHID HTTP error: {exc}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"ORCHID HTTP error: {exc}") from exc
     except json.JSONDecodeError as exc:
@@ -157,7 +161,7 @@ def check_orchid_mcp() -> bool:
 
 
 def orchid_install_hint() -> str:
-    return "pip install orchid-mcp"
+    return "Install orchid-mcp from the Setup tab"
 
 
 def _mcp_call(func_name: str, **kwargs: Any) -> Any:
@@ -190,7 +194,8 @@ def orchid_search_systems(
         sys_id = "-".join(sorted(e.capitalize() for e in elements))
         try:
             data = _fetch_json(f"{_ORCHID_BASE}/literature/systems/{sys_id}.json")
-            return [{"system": sys_id, "data": data}] if data else []
+            if data:
+                return [{"system": sys_id, "data": data}]
         except RuntimeError:
             pass
     # Try index endpoint if it exists
@@ -220,10 +225,10 @@ def get_system_data(
             return _mcp_call("get_system_data", **kwargs)
         except Exception:
             pass
-    try:
-        return _fetch_json(f"{_ORCHID_BASE}/literature/systems/{system}.json")
-    except RuntimeError as exc:
-        return {"error": str(exc), "system": system}
+    data = _fetch_json(f"{_ORCHID_BASE}/literature/systems/{system}.json")
+    if data is None:
+        return {"system": system, "values": [], "available": False}
+    return data if isinstance(data, dict) else {"system": system, "data": data}
 
 
 def get_phase_diagram(
@@ -242,10 +247,10 @@ def get_phase_diagram(
             return _mcp_call("get_phase_diagram", **kwargs)
         except Exception:
             pass
-    try:
-        return _fetch_json(f"{_ORCHID_BASE}/diagrams/{system}.json")
-    except RuntimeError as exc:
-        return {"error": str(exc), "system": system}
+    data = _fetch_json(f"{_ORCHID_BASE}/diagrams/{system}.json")
+    if data is None:
+        return {"error": "No phase diagram available via HTTP — install orchid-mcp from the Setup tab", "system": system}
+    return data if isinstance(data, dict) else {"system": system, "data": data}
 
 
 def get_formation_enthalpy(formula: str) -> dict[str, Any]:
@@ -256,7 +261,7 @@ def get_formation_enthalpy(formula: str) -> dict[str, Any]:
         except Exception:
             pass
     return {
-        "error": "orchid-mcp required for formation enthalpy queries",
+        "error": "orchid-mcp not installed — use the Setup tab to install it",
         "formula": formula,
         "hint": orchid_install_hint(),
     }
@@ -315,6 +320,8 @@ def get_tdb_content(file_id: str) -> str:
             pass
     try:
         data = _fetch_json(f"{_ORCHID_BASE}/tdb/{file_id}.json")
+        if data is None:
+            return f"$ TDB {file_id!r} not found via HTTP — install orchid-mcp from the Setup tab"
         if isinstance(data, dict):
             return data.get("content", "")
         return str(data)
@@ -330,7 +337,7 @@ def compare_to_dft(system: str) -> dict[str, Any]:
         except Exception:
             pass
     return {
-        "error": "orchid-mcp required for DFT comparison",
+        "error": "orchid-mcp not installed — use the Setup tab to install it",
         "system": system,
         "hint": orchid_install_hint(),
     }
