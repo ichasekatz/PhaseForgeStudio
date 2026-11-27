@@ -170,6 +170,16 @@ header .spacer { flex: 0 0 4px; }
   box-shadow: 0 4px 16px rgba(0,0,0,.4);
 }
 .ws-more-menu .ws-tab { text-align: left; width: 100%; }
+.home-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; cursor: pointer; transition: border-color .15s, background .15s;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.home-card:hover { border-color: var(--accent); background: var(--bg3); }
+.home-card-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.home-card-body { font-size: 11px; color: var(--text2); line-height: 1.6; flex: 1; }
+.home-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.home-card-tags span { font-size: 9px; padding: 1px 6px; border-radius: 8px; background: var(--bg3); color: var(--accent); border: 1px solid var(--border); }
 .btn {
   padding: 4px 10px;
   border-radius: var(--radius);
@@ -461,6 +471,7 @@ select option { background: var(--bg3); }
 <!-- ── Top bar ───────────────────────────────────────────── -->
 <header>
   <div class="ws-tabs">
+    <button class="ws-tab" id="ws-tab-home" onclick="switchWorkspace('home')">Home</button>
     <button class="ws-tab" id="ws-tab-mf" onclick="switchWorkspace('mf')">Materials Framework</button>
     <button class="ws-tab" id="ws-tab-paipai" onclick="switchWorkspace('paipai')">PAIPAI</button>
     <button class="ws-tab" id="ws-tab-blade" onclick="switchWorkspace('blade')">BLADE</button>
@@ -511,6 +522,104 @@ select option { background: var(--bg3); }
   <button class="btn danger" id="btn-stop" onclick="stopJob()" disabled>Stop</button>
   <button class="btn primary" id="btn-run" onclick="runJob()">Run</button>
 </header>
+
+<!-- ── Home / Info workspace ─────────────────────────────────────────────── -->
+<div id="home-view" style="display:none;flex:1;overflow:auto;background:var(--bg);padding:0;">
+  <div style="max-width:900px;margin:0 auto;padding:32px 24px;">
+    <h2 style="font-size:1.4em;font-weight:700;margin:0 0 4px;">PhaseForge Studio</h2>
+    <p style="color:var(--text2);font-size:12px;margin:0 0 28px;">CALPHAD pipeline dashboard — browse the workspaces below or start with Setup.</p>
+
+    <!-- Quick start -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-bottom:10px;">Quick Start</div>
+      <ol style="margin:0;padding-left:18px;font-size:12px;line-height:2;color:var(--text);">
+        <li>Go to <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('setup')">Setup</b> → install any missing packages (orchid-mcp, pycalphad, etc.)</li>
+        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('mf')">Materials Framework</b> → pick elements + lattices → run SQS generation</li>
+        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="toggleWsGroup(event,'orchid-group-menu')">ORCHID</b> → search for experimental data on your system</li>
+        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="closeWsGroup('pf-group-menu');switchWorkspace('pfp')">PhaseForgePlus</b> → fit TDB using computed + experimental data</li>
+        <li>Or use <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('pipeline')">Pipeline Maker</b> to chain all steps in one run</li>
+      </ol>
+    </div>
+
+    <!-- Workspace cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+
+      <div class="home-card" onclick="switchWorkspace('mf')">
+        <div class="home-card-title">Materials Framework</div>
+        <div class="home-card-body">Generate SQS structures for alloy systems, run MLIP relaxations, and produce fitted TDB databases. Entry point for computed thermodynamic data.</div>
+        <div class="home-card-tags"><span>SQS</span><span>MLIP</span><span>TDB</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('paipai')">
+        <div class="home-card-title">PAIPAI</div>
+        <div class="home-card-body">Monte Carlo low-energy structure search using GRACE-2L-OMAT. Finds stable atomic configurations in a composition space. Outputs CONTCAR files.</div>
+        <div class="home-card-tags"><span>Structure Search</span><span>Monte Carlo</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('blade')">
+        <div class="home-card-title">BLADE</div>
+        <div class="home-card-body">Full CALPHAD pipeline: SQS generation → MLIP energies → TDB fitting. Configure elements, lattices, and temperature range — generates a launch-ready TOML.</div>
+        <div class="home-card-tags"><span>CALPHAD</span><span>End-to-End</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('orchid')">
+        <div class="home-card-title">ORCHID</div>
+        <div class="home-card-body">Search 2 912 expert-drawn TDB databases and 73 k+ literature thermodynamic values. Fetch phase diagrams, formation enthalpies, and invariant reactions.</div>
+        <div class="home-card-tags"><span>Experimental Data</span><span>Literature</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('sage')">
+        <div class="home-card-title">ORCHID-SAGE</div>
+        <div class="home-card-body">Reproducibility layer for CALPHAD assessments. Browse model recipes, validate ORCHID specs, plan reproductions, and visualize TDB output phase diagrams.</div>
+        <div class="home-card-tags"><span>Reproducibility</span><span>SAGE</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('pf')">
+        <div class="home-card-title">PhaseForge</div>
+        <div class="home-card-body">SQS-based CALPHAD workflow using ATAT + MaterialsFramework. Configure species, lattices, and run parameters. View phase diagrams and trajectory data.</div>
+        <div class="home-card-tags"><span>ATAT</span><span>CALPHAD</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('pfp')">
+        <div class="home-card-title">PhaseForgePlus</div>
+        <div class="home-card-body">Bayesian TDB fitting using ESPEI. Combine computed energies (MF/BLADE) with experimental data (ORCHID) for MCMC-refined CALPHAD parameters.</div>
+        <div class="home-card-tags"><span>ESPEI</span><span>MCMC</span><span>Bayesian</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('pipeline')">
+        <div class="home-card-title">Pipeline Maker</div>
+        <div class="home-card-body">Chain any combination of framework steps into a single run. Shared inputs (elements, system name, TDB path) auto-wire between steps. Live log per step.</div>
+        <div class="home-card-tags"><span>Automation</span><span>Multi-Framework</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('benchmark')">
+        <div class="home-card-title">Benchmark</div>
+        <div class="home-card-body">Evaluate MLIP accuracy on DFT reference structures. Energy MAE, force MAE, stress MAE, bootstrap CIs, outlier detection, per-composition breakdown.</div>
+        <div class="home-card-tags"><span>MLIP Accuracy</span><span>Benchmarking</span></div>
+      </div>
+
+      <div class="home-card" onclick="switchWorkspace('setup')">
+        <div class="home-card-title">Setup</div>
+        <div class="home-card-body">Install Python packages (orchid-mcp, pycalphad, materialsframework, phaseforgeplus, blade) and configure binary paths. Auto-detects local source installs.</div>
+        <div class="home-card-tags"><span>Install</span><span>Config</span></div>
+      </div>
+
+    </div>
+
+    <!-- Framework data flow -->
+    <div style="margin-top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-bottom:10px;">Typical Data Flow</div>
+      <div style="font-size:12px;color:var(--text);font-family:var(--font);line-height:2;">
+        <span style="color:var(--teal);">PAIPAI</span> (low-E search)
+        → <span style="color:var(--teal);">MF / BLADE</span> (SQS + MLIP → computed TDB)
+        → <span style="color:var(--teal);">ORCHID</span> (experimental data)
+        → <span style="color:var(--teal);">PhaseForgePlus</span> (ESPEI fit → refined TDB)
+        → <span style="color:var(--teal);">ORCHID / SAGE</span> (visualize + reproduce)
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;">Pipeline Maker automates this entire chain in one click.</div>
+    </div>
+  </div>
+</div>
 
 <!-- ── BLADE workspace ───────────────────────────────────────────────────── -->
 <div id="blade-view" style="display:none;flex:1;overflow:hidden;flex-direction:row;gap:0;">
@@ -2149,7 +2258,7 @@ function _renderPipelineStatus(data) {
 
 // ── Config ─────────────────────────────────────────────────
 function _applyWorkspaceTabs(workspace) {
-  const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", pipeline: "ws-tab-pipeline", setup: "ws-tab-setup" };
+  const tabs = { home: "ws-tab-home", pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", pipeline: "ws-tab-pipeline", setup: "ws-tab-setup" };
   const moreWorkspaces = new Set(["benchmark", "pipeline", "setup"]);
   const orchidWorkspaces = new Set(["orchid", "sage"]);
   const pfWorkspaces = new Set(["pf", "pfp"]);
@@ -2165,7 +2274,7 @@ function _applyWorkspaceTabs(workspace) {
   if (pfGroupBtn) pfGroupBtn.classList.toggle("active", pfWorkspaces.has(workspace));
   const title = document.getElementById("header-title");
   if (title) {
-    const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", pipeline: "Pipeline Maker", setup: "Setup" };
+    const names = { home: "PhaseForge Studio", pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", pipeline: "Pipeline Maker", setup: "Setup" };
     title.innerHTML = `${names[workspace] || "Materials Framework"} <span>Studio</span>`;
   }
 }
@@ -2212,6 +2321,8 @@ async function switchWorkspace(workspace) {
 }
 
 function _applyWorkspaceView(workspace) {
+  const homeView = document.getElementById("home-view");
+  if (homeView) homeView.style.display = workspace === "home" ? "flex" : "none";
   const panels = document.getElementById("pf-panels");
   const pfView = document.getElementById("pf-view");
   const bladeView = document.getElementById("blade-view");
@@ -2475,7 +2586,7 @@ function applyConfigToForm() {
   pfSelectedLattices = new Set(Array.isArray(cfg.pf_lattices) ? cfg.pf_lattices : ["FCC_A1"]);
   renderPfLattices();
   buildPfCommand();
-  const ws = cfg.active_workspace === "phaseforge" ? "mf" : (cfg.active_workspace || "mf");
+  const ws = cfg.active_workspace === "phaseforge" ? "mf" : (cfg.active_workspace || "home");
   _applyWorkspaceTabs(ws);
   _applyWorkspaceView(ws);
 }
