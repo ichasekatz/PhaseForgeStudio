@@ -464,10 +464,20 @@ select option { background: var(--bg3); }
     <button class="ws-tab" id="ws-tab-mf" onclick="switchWorkspace('mf')">Materials Framework</button>
     <button class="ws-tab" id="ws-tab-paipai" onclick="switchWorkspace('paipai')">PAIPAI</button>
     <button class="ws-tab" id="ws-tab-blade" onclick="switchWorkspace('blade')">BLADE</button>
-    <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid')">ORCHID</button>
-    <button class="ws-tab" id="ws-tab-sage" onclick="switchWorkspace('sage')">ORCHID-SAGE</button>
-    <button class="ws-tab active" id="ws-tab-pf" onclick="switchWorkspace('pf')">PhaseForge</button>
-    <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp')">PhaseForgePlus</button>
+    <div class="ws-more-wrap" id="ws-orchid-wrap">
+      <button class="ws-tab" id="ws-tab-orchid-group" onclick="toggleWsGroup(event,'orchid-group-menu')">ORCHID ▾</button>
+      <div class="ws-more-menu" id="orchid-group-menu" style="display:none;">
+        <button class="ws-tab" id="ws-tab-orchid" onclick="switchWorkspace('orchid');closeWsGroup('orchid-group-menu')">ORCHID</button>
+        <button class="ws-tab" id="ws-tab-sage" onclick="switchWorkspace('sage');closeWsGroup('orchid-group-menu')">ORCHID-SAGE</button>
+      </div>
+    </div>
+    <div class="ws-more-wrap" id="ws-pf-wrap">
+      <button class="ws-tab active" id="ws-tab-pf-group" onclick="toggleWsGroup(event,'pf-group-menu')">PhaseForge ▾</button>
+      <div class="ws-more-menu" id="pf-group-menu" style="display:none;">
+        <button class="ws-tab" id="ws-tab-pf" onclick="switchWorkspace('pf');closeWsGroup('pf-group-menu')">PhaseForge</button>
+        <button class="ws-tab" id="ws-tab-pfp" onclick="switchWorkspace('pfp');closeWsGroup('pf-group-menu')">PhaseForgePlus</button>
+      </div>
+    </div>
     <div class="ws-more-wrap" id="ws-more-wrap">
       <button class="ws-tab" id="ws-tab-more" onclick="toggleWsMore(event)">More ▾</button>
       <div class="ws-more-menu" id="ws-more-menu" style="display:none;">
@@ -2093,12 +2103,18 @@ function _renderPipelineStatus(data) {
 function _applyWorkspaceTabs(workspace) {
   const tabs = { pf: "ws-tab-pf", mf: "ws-tab-mf", blade: "ws-tab-blade", paipai: "ws-tab-paipai", orchid: "ws-tab-orchid", pfp: "ws-tab-pfp", benchmark: "ws-tab-benchmark", sage: "ws-tab-sage", pipeline: "ws-tab-pipeline", setup: "ws-tab-setup" };
   const moreWorkspaces = new Set(["benchmark", "pipeline", "setup"]);
+  const orchidWorkspaces = new Set(["orchid", "sage"]);
+  const pfWorkspaces = new Set(["pf", "pfp"]);
   Object.entries(tabs).forEach(([ws, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", workspace === ws);
   });
   const moreBtn = document.getElementById("ws-tab-more");
   if (moreBtn) moreBtn.classList.toggle("active", moreWorkspaces.has(workspace));
+  const orchidGroupBtn = document.getElementById("ws-tab-orchid-group");
+  if (orchidGroupBtn) orchidGroupBtn.classList.toggle("active", orchidWorkspaces.has(workspace));
+  const pfGroupBtn = document.getElementById("ws-tab-pf-group");
+  if (pfGroupBtn) pfGroupBtn.classList.toggle("active", pfWorkspaces.has(workspace));
   const title = document.getElementById("header-title");
   if (title) {
     const names = { pf: "PhaseForge", mf: "Materials Framework", blade: "BLADE", paipai: "PAIPAI", orchid: "ORCHID", pfp: "PhaseForgePlus", benchmark: "MLIP Benchmark", sage: "ORCHID-SAGE", pipeline: "Pipeline Maker", setup: "Setup" };
@@ -2115,7 +2131,23 @@ function closeWsMore() {
   const menu = document.getElementById("ws-more-menu");
   if (menu) menu.style.display = "none";
 }
-document.addEventListener("click", () => closeWsMore());
+function toggleWsGroup(e, menuId) {
+  e.stopPropagation();
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+  // Close any other open group menus first.
+  document.querySelectorAll(".ws-more-menu").forEach(m => { if (m.id !== menuId) m.style.display = "none"; });
+  menu.style.display = menu.style.display === "none" ? "flex" : "none";
+}
+function closeWsGroup(menuId) {
+  const menu = document.getElementById(menuId);
+  if (menu) menu.style.display = "none";
+}
+document.addEventListener("click", () => {
+  closeWsMore();
+  closeWsGroup("orchid-group-menu");
+  closeWsGroup("pf-group-menu");
+});
 
 async function switchWorkspace(workspace) {
   if (cfg.active_workspace === workspace) return;
