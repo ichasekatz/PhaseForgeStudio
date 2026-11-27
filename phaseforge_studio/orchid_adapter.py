@@ -22,10 +22,65 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# MCP server process management
+# ---------------------------------------------------------------------------
+
+_orchid_proc: subprocess.Popen | None = None
+
+
+def is_server_running(port: int = 3000) -> bool:
+    """Return True if something answers HTTP on *port*."""
+    try:
+        req = urllib.request.Request(
+            f"http://localhost:{port}/health",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def start_orchid_server(
+    cmd: str = "orchid-server",
+    port: int = 3000,
+    timeout: int = 30,
+) -> bool:
+    """Start the ORCHID MCP server if not already running. Returns True when ready."""
+    global _orchid_proc
+    if is_server_running(port):
+        return True
+    if _orchid_proc and _orchid_proc.poll() is None:
+        pass  # process alive but not yet serving — fall through to poll
+    else:
+        _orchid_proc = subprocess.Popen(
+            cmd.split(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if is_server_running(port):
+            return True
+        if _orchid_proc.poll() is not None:
+            return False  # process died
+        time.sleep(1)
+    return False
+
+
+def stop_orchid_server() -> None:
+    global _orchid_proc
+    if _orchid_proc and _orchid_proc.poll() is None:
+        _orchid_proc.terminate()
+    _orchid_proc = None
 
 _ORCHID_BASE = "https://data.orchid-project.org"
 _CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "orchid-mcp"

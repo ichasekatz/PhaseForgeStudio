@@ -59,6 +59,10 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
         "default_config": {
             "system": "",
             "limit": 20,
+            "auto_start_server": True,
+            "server_cmd": "orchid-server",
+            "server_port": 3000,
+            "server_timeout": 30,
         },
         "outputs": ["data_paths", "system"],
         "auto_wire": {
@@ -253,14 +257,36 @@ def _run_mf_step(cfg: dict[str, Any], state: StepState, cancel: threading.Event)
 
 
 def _run_orchid_step(cfg: dict[str, Any], state: StepState, cancel: threading.Event) -> dict[str, Any]:
-    from phaseforge_studio.orchid_adapter import orchid_search_systems
+    from phaseforge_studio.orchid_adapter import (
+        is_server_running,
+        orchid_search_systems,
+        start_orchid_server,
+    )
 
     system = cfg.get("system", "")
     if not system:
         raise RuntimeError("system required for ORCHID step")
 
+    # Auto-start MCP server if configured and not already running.
+    if cfg.get("auto_start_server", False):
+        port = int(cfg.get("server_port", 3000))
+        cmd = str(cfg.get("server_cmd", "orchid-server"))
+        timeout = int(cfg.get("server_timeout", 30))
+        if is_server_running(port):
+            state.push_log(f"[orchid] MCP server already running on port {port}")
+        else:
+            state.push_log(f"[orchid] Starting MCP server: {cmd} (port {port}, timeout {timeout}s)…")
+            ok = start_orchid_server(cmd=cmd, port=port, timeout=timeout)
+            if ok:
+                state.push_log(f"[orchid] MCP server ready on port {port}")
+            else:
+                state.push_log("[orchid] WARNING: MCP server did not start — falling back to HTTP")
+
+    # Parse system string "Al-Fe-Ni" → ["Al", "Fe", "Ni"] for the search call.
+    elements = [e.strip() for e in system.split("-") if e.strip()]
+
     state.push_log(f"[orchid] Searching: {system}")
-    results = orchid_search_systems(system, limit=int(cfg.get("limit", 20)))
+    results = orchid_search_systems(elements, limit=int(cfg.get("limit", 20)))
     state.push_log(f"[orchid] Found {len(results)} results")
     return {"system": system, "data_paths": [], "results": results}
 
