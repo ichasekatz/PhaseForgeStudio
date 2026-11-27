@@ -1619,6 +1619,45 @@ class StudioHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)})
 
+        elif path == "/api/orchid/compute_diagram":
+            try:
+                body = json.loads(self._read_body())
+            except (json.JSONDecodeError, ValueError):
+                self._json({"error": "invalid JSON"}, 400)
+                return
+            tdb_content = body.get("tdb_content", "")
+            tdb_path = body.get("tdb_path", "")
+            elements = body.get("elements", [])
+            if not elements or len(elements) < 2:
+                self._json({"error": "Need at least 2 elements"}, 400)
+                return
+            try:
+                from phaseforge_studio.diagram_utils import (
+                    compute_binary_diagram,
+                    compute_diagram_from_file,
+                )
+                if tdb_content:
+                    data = compute_binary_diagram(
+                        tdb_content, elements,
+                        T_min=float(body.get("T_min", 300)),
+                        T_max=float(body.get("T_max", 2000)),
+                        n_T=int(body.get("n_T", 60)),
+                        n_X=int(body.get("n_X", 50)),
+                    )
+                elif tdb_path:
+                    data = compute_diagram_from_file(
+                        tdb_path, elements,
+                        T_min=float(body.get("T_min", 300)),
+                        T_max=float(body.get("T_max", 2000)),
+                        n_T=int(body.get("n_T", 60)),
+                        n_X=int(body.get("n_X", 50)),
+                    )
+                else:
+                    data = {"error": "tdb_content or tdb_path required"}
+                self._json(data)
+            except Exception as exc:
+                self._json({"error": str(exc)})
+
         # ── PhaseForgePlus endpoints ─────────────────────────────────────────
         elif path == "/api/pfp_run":
             if _pfp_job.state == "running":
