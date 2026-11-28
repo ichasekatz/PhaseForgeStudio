@@ -2900,9 +2900,6 @@ def main() -> None:
     StudioHandler.config_path = args.config
     StudioHandler.cfg = cfg
 
-    # Auto-install missing packages in background (non-blocking)
-    _auto_install_on_startup(cfg)
-
     # Wire config-specified binary overrides
     set_paipai_override(cfg.get("paipai_binary"))
 

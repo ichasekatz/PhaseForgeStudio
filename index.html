@@ -1147,10 +1147,10 @@ select option { background: var(--bg3); }
     Binary tools (PAIPAI) must be built from source.
   </div>
 
-  <!-- Startup auto-install banner -->
-  <div id="setup-startup-banner" style="display:none;padding:8px 12px;background:rgba(79,140,255,0.1);border:1px solid var(--accent);border-radius:5px;font-size:11px;">
-    <strong style="color:var(--accent);">Auto-installing on startup:</strong>
-    <span id="setup-startup-list"></span>
+  <!-- Missing packages notice -->
+  <div id="setup-missing-banner" style="display:none;padding:10px 14px;background:rgba(248,81,73,0.08);border:1px solid var(--red);border-radius:5px;font-size:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span id="setup-missing-msg" style="flex:1;color:var(--text);"></span>
+    <button class="btn primary" style="font-size:11px;padding:3px 10px;" onclick="setupInstallSelected()">Install Selected</button>
   </div>
 
   <!-- Python packages table -->
@@ -1158,6 +1158,7 @@ select option { background: var(--bg3); }
   <table style="width:100%;border-collapse:collapse;font-size:12px;" id="setup-pkg-table">
     <thead>
       <tr style="background:var(--bg2);color:var(--text2);">
+        <th style="padding:5px 8px;border-bottom:1px solid var(--border);width:18px;"></th>
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Package</th>
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Status</th>
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Path / pip spec</th>
@@ -5574,32 +5575,17 @@ async function bmPopulateTemplates() {
 // ── Setup / Dependencies workspace ────────────────────────────────────────
 
 async function setupCheckStartupJobs() {
-  try {
-    const resp = await fetch("/api/deps/startup_jobs");
-    const jobs = await resp.json();
-    const banner = document.getElementById("setup-startup-banner");
-    const list = document.getElementById("setup-startup-list");
-    if (!banner || !list) return;
-    const keys = Object.keys(jobs);
-    if (!keys.length) { banner.style.display = "none"; return; }
-    const running = keys.filter(k => jobs[k].status === "running");
-    const done = keys.filter(k => jobs[k].status === "done" && jobs[k].result?.ok);
-    const failed = keys.filter(k => jobs[k].status === "done" && !jobs[k].result?.ok);
-    if (!running.length && !failed.length && done.length) {
-      banner.style.display = "none";
-      setupRefresh();
-      return;
-    }
-    banner.style.display = "block";
-    list.innerHTML = keys.map(k => {
-      const j = jobs[k];
-      const icon = j.status === "running" ? "⏳" : (j.result?.ok ? "✓" : "✗");
-      const col = j.status === "running" ? "var(--accent)" : (j.result?.ok ? "var(--green)" : "var(--red)");
-      return `<span style="color:${col};margin-right:10px;">${icon} ${j.label}</span>`;
-    }).join("");
-    if (running.length) setTimeout(setupCheckStartupJobs, 3000);
-    else setupRefresh();
-  } catch {}
+  // No-op — auto-install removed; kept so workspace-switch call is harmless
+}
+
+async function setupInstallSelected() {
+  const checkboxes = document.querySelectorAll(".pkg-install-cb:checked");
+  if (!checkboxes.length) return;
+  for (const cb of checkboxes) {
+    const key = cb.dataset.key;
+    const btn = document.querySelector(`button[data-install-key="${key}"]`);
+    await setupInstall(key, btn);
+  }
 }
 
 async function setupRefresh() {
@@ -5614,34 +5600,52 @@ async function setupRefresh() {
     // Packages
     if (pkgTbody) {
       pkgTbody.innerHTML = "";
+      let missingCount = 0;
+      let missingNames = [];
       for (const pkg of (data.packages || [])) {
         const tr = document.createElement("tr");
         tr.id = `pkg-row-${pkg.key}`;
         tr.style.borderBottom = "1px solid var(--border)";
+        const isMissing = !pkg.available && pkg.installable;
+        if (isMissing) { missingCount++; missingNames.push(pkg.label); }
+        const checkboxHtml = isMissing
+          ? `<input type="checkbox" class="pkg-install-cb" data-key="${pkg.key}" checked style="accent-color:var(--accent);cursor:pointer;">`
+          : `<span style="display:inline-block;width:14px;"></span>`;
         const statusHtml = pkg.available
           ? `<span style="color:var(--green);">✓ installed</span>`
           : `<span style="color:var(--red);">✗ missing</span>`;
-        // Editable spec input — shows source_path if found, else pip_spec
         const specVal = (pkg.source_path || pkg.pip_spec || "").replace(/"/g, "&quot;");
         const specInput = `<input
           id="spec-input-${pkg.key}"
           type="text"
           value="${specVal}"
-          placeholder="${pkg.pip_spec || "pip spec or local path"}"
-          style="font-family:var(--font);font-size:10px;width:260px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text);"
+          placeholder="${(pkg.pip_spec || "pip spec or local path").replace(/"/g, "&quot;")}"
+          style="font-family:var(--font);font-size:10px;width:240px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text);"
           onchange="setupSaveSpec('${pkg.key}', this.value)"
         />`;
         const installBtn = pkg.installable
-          ? `<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="setupInstall('${pkg.key}', this)">
+          ? `<button class="btn" data-install-key="${pkg.key}" style="font-size:10px;padding:2px 8px;" onclick="setupInstall('${pkg.key}', this)">
                ${pkg.available ? "Reinstall" : "Install"}
              </button>`
           : "";
         tr.innerHTML = `
+          <td style="padding:5px 8px;width:18px;">${checkboxHtml}</td>
           <td style="padding:5px 8px;">${pkg.label}</td>
           <td style="padding:5px 8px;">${statusHtml}</td>
           <td style="padding:5px 8px;">${specInput}</td>
           <td style="padding:5px 8px;">${installBtn}</td>`;
         pkgTbody.appendChild(tr);
+      }
+      // Show/hide missing banner
+      const banner = document.getElementById("setup-missing-banner");
+      const msg = document.getElementById("setup-missing-msg");
+      if (banner) {
+        if (missingCount > 0) {
+          banner.style.display = "flex";
+          if (msg) msg.textContent = `${missingCount} package${missingCount > 1 ? "s" : ""} missing: ${missingNames.join(", ")}`;
+        } else {
+          banner.style.display = "none";
+        }
       }
     }
 
