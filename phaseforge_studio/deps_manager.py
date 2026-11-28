@@ -57,6 +57,7 @@ _PY_PACKAGES: dict[str, dict[str, Any]] = {
         "label": "BLADE",
         "optional": True,
         "source_key": "blade_src",
+        "no_deps": True,  # skip torch/pymatgen/etc — GUI only needs the package, not its ML stack
     },
     "ase": {
         "import_name": "ase",
@@ -246,21 +247,21 @@ def install_package(
     pip_spec = meta.get("pip_spec")
     src_key = meta.get("source_key")
 
+    no_deps = meta.get("no_deps", False)
+    no_deps_flag = ["--no-deps"] if no_deps else []
+
     if src_key:
         src = cfg.get(src_key) or _guess_src(key)
         if src and Path(src).exists():
-            # preferred: editable install from local source
-            # source_key may point to repo root (flat layout) or src/ subdir
             src_path = Path(src)
             install_root = src_path if (src_path / "pyproject.toml").exists() or (src_path / "setup.py").exists() else src_path.parent
-            cmd = [*_uv_or_pip(), "-e", str(install_root)]
+            cmd = [*_uv_or_pip(), *no_deps_flag, "-e", str(install_root)]
         elif pip_spec:
-            # fallback: install from PyPI
-            cmd = [*_uv_or_pip(), pip_spec]
+            cmd = [*_uv_or_pip(), *no_deps_flag, pip_spec]
         else:
             return {"ok": False, "error": f"source not found for {key} and no PyPI spec available; set {src_key!r} in config"}
     elif pip_spec:
-        cmd = [*_uv_or_pip(), pip_spec]
+        cmd = [*_uv_or_pip(), *no_deps_flag, pip_spec]
     else:
         return {"ok": False, "error": f"no install spec for {key}"}
 
