@@ -5665,26 +5665,44 @@ async function setupRefresh() {
 async function setupInstall(key, btn) {
   const logEl = document.getElementById("setup-install-log");
   if (btn) { btn.disabled = true; btn.textContent = "Installing…"; }
-  if (logEl) { logEl.style.display = "block"; logEl.textContent = `Installing ${key}…\n`; }
+  if (logEl) { logEl.style.display = "block"; logEl.textContent = `Installing ${key}… (this may take a minute)\n`; }
+  let jobId = null;
   try {
     const resp = await fetch("/api/deps/install", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({key}),
     });
-    const data = await resp.json();
-    if (logEl) logEl.textContent += (data.cmd ? `$ ${data.cmd}\n\n` : "") + (data.output || "") + (data.error || "");
-    if (data.ok) {
-      if (logEl) logEl.textContent += "\n✓ Done. Restart the server for changes to take effect.";
-      setTimeout(setupRefresh, 500);
-    } else {
-      if (logEl) logEl.textContent += "\n✗ Failed.";
-      if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
-    }
+    const start = await resp.json();
+    if (start.error) { if (logEl) logEl.textContent += start.error; return; }
+    jobId = start.job_id;
   } catch (e) {
-    if (logEl) logEl.textContent += String(e);
+    if (logEl) logEl.textContent += "Failed to start: " + e;
     if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+    return;
   }
+  // Poll until done.
+  let dots = 0;
+  const timer = setInterval(async () => {
+    dots++;
+    if (logEl) logEl.textContent = `Installing ${key}… ${"•".repeat(dots % 6 + 1)}\n`;
+    try {
+      const r = await fetch("/api/deps/install_status?job_id=" + jobId);
+      const d = await r.json();
+      if (d.status === "done") {
+        clearInterval(timer);
+        const res = d.result || {};
+        if (logEl) logEl.textContent = (res.cmd ? `$ ${res.cmd}\n\n` : "") + (res.output || "") + (res.error || "");
+        if (res.ok) {
+          if (logEl) logEl.textContent += "\n✓ Done. Restart the server for changes to take effect.";
+          setTimeout(setupRefresh, 500);
+        } else {
+          if (logEl) logEl.textContent += "\n✗ Failed.";
+          if (btn) { btn.disabled = false; btn.textContent = "Retry"; }
+        }
+      }
+    } catch {}
+  }, 2000);
 }
 
 // ── ORCHID-SAGE workspace ──────────────────────────────────────────────────

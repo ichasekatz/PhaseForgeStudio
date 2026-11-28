@@ -181,6 +181,17 @@ from phaseforge_studio.sage_adapter import (  # noqa: E402
 
 _pfp_job = PfpJob()
 
+# ── Async install job registry ────────────────────────────────────────────────
+_install_jobs: dict[str, dict] = {}  # job_id → {status, result}
+_install_lock = threading.Lock()
+
+
+def _run_install_job(job_id: str, key: str, cfg: dict) -> None:
+    result = deps_install(key, cfg)
+    with _install_lock:
+        _install_jobs[job_id]["status"] = "done"
+        _install_jobs[job_id]["result"] = result
+
 
 def _fmt_or_blank(value: float | None, digits: int = 6) -> str:
     """Format a float for CSV export, returning empty string for None."""
@@ -451,6 +462,15 @@ class StudioHandler(BaseHTTPRequestHandler):
         # ── Dependency status / install ───────────────────────────────────────
         elif path == "/api/deps/status":
             self._json(deps_all_status(self.cfg))
+
+        elif path == "/api/deps/install_status":
+            job_id = qs.get("job_id", [""])[0]
+            with _install_lock:
+                job = _install_jobs.get(job_id)
+            if job is None:
+                self._json({"error": "unknown job"}, 404)
+                return
+            self._json({"job_id": job_id, "status": job["status"], "result": job["result"]})
 
         # ── Pipeline Maker GET endpoints ─────────────────────────────────────
         elif path == "/api/pipeline/steps":
@@ -1326,8 +1346,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             if not key:
                 self._json({"error": "key required"}, 400)
                 return
-            result = deps_install(key, self.cfg)
-            self._json(result)
+            import uuid as _uuid
+            job_id = str(_uuid.uuid4())[:8]
+            with _install_lock:
+                _install_jobs[job_id] = {"status": "running", "result": None}
+            t = threading.Thread(
+                target=_run_install_job, args=(job_id, key, dict(self.cfg)), daemon=True
+            )
+            t.start()
+            self._json({"ok": True, "job_id": job_id, "status": "running"})
 
         # ── Pipeline Maker POST endpoints ────────────────────────────────────
         elif path == "/api/pipeline/start":
