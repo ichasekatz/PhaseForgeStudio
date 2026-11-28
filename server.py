@@ -212,6 +212,18 @@ def _auto_install_on_startup(cfg: dict) -> None:
         print(f"  auto-installing: {pkg['label']} (job {job_id})")
 
 
+_files_dir = _server_dir / "Files"
+
+
+def _auto_workdir(workspace: str) -> Path:
+    """Return and create an auto-generated job directory under GUI/Files/<workspace>/."""
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    p = _files_dir / workspace / f"job_{ts}"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def _fmt_or_blank(value: float | None, digits: int = 6) -> str:
     """Format a float for CSV export, returning empty string for None."""
     if value is None:
@@ -490,6 +502,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "unknown job"}, 404)
                 return
             self._json({"job_id": job_id, "status": job["status"], "result": job["result"]})
+
+        elif path == "/api/auto_path":
+            workspace = qs.get("workspace", [""])[0] or "misc"
+            p = _files_dir / workspace
+            self._json({"path": str(p), "workspace": workspace})
 
         elif path == "/api/deps/startup_jobs":
             with _install_lock:
@@ -1137,10 +1154,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             bm_id, mlip_raw, filename = parts[0], parts[1], parts[2]
             bm_workdir_str = self.cfg.get("benchmark_workdir", "")
-            if not bm_workdir_str:
-                self._json({"error": "benchmark_workdir not set"}, 400)
-                return
-            bm_base = Path(bm_workdir_str).expanduser().resolve() / "benchmarks"
+            bm_base = (
+                Path(bm_workdir_str).expanduser().resolve() / "benchmarks"
+                if bm_workdir_str
+                else _files_dir / "benchmark"
+            )
             target: Path | None = None
             if bm_base.is_dir():
                 for d in bm_base.iterdir():
@@ -1458,8 +1476,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             workdir_str = body.get("workdir") or self.cfg.get("paipai_workdir", "")
             if not workdir_str:
-                self._json({"error": "paipai_workdir not set"}, 400)
-                return
+                workdir_str = str(_auto_workdir("paipai"))
             workdir = Path(workdir_str).expanduser().resolve()
             # Validate path is not system-sensitive
             if str(workdir).startswith("/etc") or str(workdir).startswith("/usr"):
@@ -2779,8 +2796,10 @@ T_step = {T_step}
             mlips = body.get("mlips", [])
             phases = body.get("phases", [])
             workdir_str = body.get("workdir", "") or self.cfg.get("benchmark_workdir", "")
-            if not elements or not mlips or not phases or not workdir_str:
-                self._json({"error": "elements, mlips, phases, and workdir are required"}, 400)
+            if not workdir_str:
+                workdir_str = str(_auto_workdir("benchmark"))
+            if not elements or not mlips or not phases:
+                self._json({"error": "elements, mlips, and phases are required"}, 400)
                 return
             bm_id = create_and_launch_benchmark(
                 elements=elements,

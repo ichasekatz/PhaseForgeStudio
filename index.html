@@ -787,7 +787,7 @@ select option { background: var(--bg3); }
 
     <div class="section">
       <div class="section-label">Working directory</div>
-      <input type="text" id="pf-workdir-input" placeholder="~/Research/BLADE" style="width:100%;font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);" onchange="savePfConfig()">
+      <input type="text" id="pf-workdir-input" placeholder="auto (GUI/Files/mf/)" style="width:100%;font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);" onchange="savePfConfig()">
     </div>
 
     <button class="btn primary" id="pf-run-btn" onclick="runPhaseForge()" style="width:100%;">Run sqscal</button>
@@ -825,7 +825,7 @@ select option { background: var(--bg3); }
     <div class="section">
       <div class="section-label">Work Directory</div>
       <div class="path-field">
-        <input id="paipai-workdir" type="text" placeholder="/path/to/workdir" oninput="savePaipaiConfig()">
+        <input id="paipai-workdir" type="text" placeholder="auto (GUI/Files/paipai/)" oninput="savePaipaiConfig()">
       </div>
     </div>
     <div class="section">
@@ -1443,7 +1443,7 @@ select option { background: var(--bg3); }
       <!-- Workdir -->
       <div class="section-label" style="margin-top:8px;">Workdir</div>
       <div style="display:flex;gap:4px;">
-        <input id="bm-workdir-input" type="text" placeholder="/path/to/workdir" style="flex:1;">
+        <input id="bm-workdir-input" type="text" placeholder="auto (GUI/Files/benchmark/)" style="flex:1;">
         <button class="btn" onclick="bmBrowseWorkdir()" title="Browse">…</button>
       </div>
 
@@ -4727,7 +4727,7 @@ async function paipaiWriteStrucIn() {
   const lattice = document.getElementById("paipai-lattice").value.trim();
   const iels = (document.getElementById("paipai-interstitial-elements").value.trim().split(/\s+/).filter(Boolean));
   const icts = (document.getElementById("paipai-interstitial-counts").value.trim().split(/\s+/).map(Number).filter(n => !isNaN(n)));
-  if (!workdir) { _appendPaipaiLog("[error] Set workdir first."); return; }
+  // workdir is optional — server auto-generates under GUI/Files/paipai/ if empty
   try {
     const r = await fetch("/api/paipai_write_struc", {
       method: "POST",
@@ -6214,8 +6214,8 @@ async function bmRun() {
   const device = document.getElementById("bm-device-select")?.value || "cpu";
 
   const needsPhases = benchmarkMode !== "energy";
-  if (!_bmElements.length || !_bmSelectedMlips.size || !workdir) {
-    alert("Elements, MLIPs, and workdir required."); return;
+  if (!_bmElements.length || !_bmSelectedMlips.size) {
+    alert("Elements and MLIPs required."); return;
   }
   if (needsPhases && !_bmSelectedPhases.size) {
     alert("Select at least one phase for this benchmark mode."); return;
