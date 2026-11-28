@@ -6127,7 +6127,9 @@ async function bmPopulateMlipList() {
   try {
     const resp = await fetch("/api/calculators");
     const calcs = await resp.json();
-    const mlips = Array.isArray(calcs) ? calcs : (calcs.calculators || []);
+    const raw = Array.isArray(calcs) ? calcs : (calcs.calculators || []);
+    // /api/calculators may return objects {name, ...} or plain strings
+    const mlips = raw.map(m => (typeof m === "object" ? m.name : m)).filter(Boolean);
     if (!mlips.length) { list.innerHTML = '<div style="color:var(--text2);font-size:11px;">No MLIPs found.</div>'; return; }
     list.innerHTML = mlips.map(m => `
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:2px 0;">
