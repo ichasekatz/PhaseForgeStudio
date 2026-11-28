@@ -164,13 +164,13 @@ def check_py_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         }
         src_key = meta.get("source_key")
         if src_key:
-            src = _guess_src(key, cfg)
-            entry["source_path"] = src
-            entry["source_found"] = bool(src and Path(src).exists())
-            entry["installable"] = True  # always installable: clone fallback
-            # Show frameworks/ path as the default spec when no source found yet
-            if not src:
-                entry["default_spec"] = str(_frameworks_path(key))
+            fw = _frameworks_path(key)
+            explicit = cfg.get(src_key, "").strip()
+            # UI always shows frameworks path (or explicit config override) —
+            # never a legacy adjacent path the user didn't choose
+            entry["source_path"] = explicit if explicit else str(fw)
+            entry["source_found"] = bool(_guess_src(key, cfg))
+            entry["installable"] = True
         out.append(entry)
     return out
 

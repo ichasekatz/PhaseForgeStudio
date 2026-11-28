@@ -509,7 +509,7 @@ select option { background: var(--bg3); }
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-bottom:10px;">Quick Start</div>
       <ol style="margin:0;padding-left:18px;font-size:12px;line-height:2;color:var(--text);">
-        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('setup')">Setup</b> — missing packages install automatically; add local paths here</li>
+        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('setup')">Setup</b> — select missing packages and click Install Selected; source packages clone into <code>frameworks/</code> automatically (or point to your own copy)</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('mf')">Materials Framework</b> → pick elements + lattices → run SQS generation</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="toggleWsGroup(event,'orchid-group-menu')">ORCHID</b> → search for experimental data on your system</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="closeWsGroup('pf-group-menu');switchWorkspace('pfp')">PhaseForgePlus</b> → fit TDB using computed + experimental data</li>
@@ -576,14 +576,30 @@ select option { background: var(--bg3); }
 
       <div class="home-card" onclick="switchWorkspace('setup')">
         <div class="home-card-title">Setup</div>
-        <div class="home-card-body">Install Python packages (orchid-mcp, pycalphad, materialsframework, phaseforgeplus, blade) and configure binary paths. Auto-detects local source installs.</div>
+        <div class="home-card-body">Install Python packages. Source packages (BLADE, MF, PFP) clone into <code>frameworks/</code> automatically. Point to an existing copy instead by editing the path. PAIPAI requires a manual C++ build.</div>
         <div class="home-card-tags"><span>Install</span><span>Config</span></div>
       </div>
 
     </div>
 
-    <!-- Framework data flow -->
+    <!-- Package status -->
     <div style="margin-top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);">Package Status</div>
+        <button class="btn" style="font-size:10px;padding:1px 6px;" onclick="homeRefreshDeps()">↻</button>
+        <button class="btn primary" style="font-size:10px;padding:1px 8px;margin-left:auto;" onclick="switchWorkspace('setup')">Open Setup</button>
+      </div>
+      <div id="home-pkg-status" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;font-size:11px;">
+        <span style="color:var(--text2);">Loading…</span>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:10px;">
+        Source packages (BLADE · MaterialsFramework · PhaseForgePlus) clone into <code>frameworks/</code> on first install — or point to your own copy in Setup.<br>
+        PAIPAI is a C++ binary — build manually and set the path in Setup.
+      </div>
+    </div>
+
+    <!-- Framework data flow -->
+    <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-bottom:10px;">Typical Data Flow</div>
       <div style="font-size:12px;color:var(--text);font-family:var(--font);line-height:2;">
         <span style="color:var(--teal);">PAIPAI</span> (low-E search)
@@ -2038,8 +2054,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadPhaseDiagrams();
   initAnalyzers();
   initMdCalculators();
-  // Start polling startup auto-install jobs immediately (shows banner in Setup tab)
   setupCheckStartupJobs();
+  homeRefreshDeps();
 });
 
 // ── Pipeline Maker ──────────────────────────────────────────
@@ -2340,6 +2356,7 @@ function _applyWorkspaceView(workspace) {
   if (workspace === "benchmark") initBenchmarkWorkspace();
   if (workspace === "sage") initSageWorkspace();
   if (workspace === "pipeline") initPipelineWorkspace();
+  if (workspace === "home") homeRefreshDeps();
   if (workspace === "setup") { setupRefresh(); setupCheckStartupJobs(); }
 }
 
@@ -5578,6 +5595,29 @@ async function setupCheckStartupJobs() {
   // No-op — auto-install removed; kept so workspace-switch call is harmless
 }
 
+async function homeRefreshDeps() {
+  const el = document.getElementById("home-pkg-status");
+  if (!el) return;
+  try {
+    const resp = await fetch("/api/deps/status");
+    const data = await resp.json();
+    const pkgs = (data.packages || []);
+    const bins = (data.binaries || []);
+    el.innerHTML = [...pkgs, ...bins].map(p => {
+      const ok = p.available;
+      const dot = ok
+        ? `<span style="color:var(--green);">●</span>`
+        : `<span style="color:var(--red);">●</span>`;
+      const sub = !ok
+        ? `<span style="color:var(--text2);font-size:10px;"> — missing</span>`
+        : "";
+      return `<div style="display:flex;align-items:center;gap:5px;">${dot} ${p.label}${sub}</div>`;
+    }).join("");
+  } catch {
+    if (el) el.innerHTML = `<span style="color:var(--text2);">Could not load status</span>`;
+  }
+}
+
 async function setupInstallSelected() {
   const checkboxes = document.querySelectorAll(".pkg-install-cb:checked");
   if (!checkboxes.length) return;
@@ -5614,12 +5654,12 @@ async function setupRefresh() {
         const statusHtml = pkg.available
           ? `<span style="color:var(--green);">✓ installed</span>`
           : `<span style="color:var(--red);">✗ missing</span>`;
-        const specVal = (pkg.source_path || pkg.default_spec || pkg.pip_spec || "").replace(/"/g, "&quot;");
+        const specVal = (pkg.source_path || pkg.pip_spec || "").replace(/"/g, "&quot;");
         const specInput = `<input
           id="spec-input-${pkg.key}"
           type="text"
           value="${specVal}"
-          placeholder="${(pkg.default_spec || pkg.pip_spec || "pip spec or local path").replace(/"/g, "&quot;")}"
+          placeholder="${(pkg.pip_spec || "pip spec or local path").replace(/"/g, "&quot;")}"
           style="font-family:var(--font);font-size:10px;width:240px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text);"
           onchange="setupSaveSpec('${pkg.key}', this.value)"
         />`;
