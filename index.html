@@ -5614,12 +5614,12 @@ async function setupRefresh() {
         const statusHtml = pkg.available
           ? `<span style="color:var(--green);">✓ installed</span>`
           : `<span style="color:var(--red);">✗ missing</span>`;
-        const specVal = (pkg.source_path || pkg.pip_spec || "").replace(/"/g, "&quot;");
+        const specVal = (pkg.source_path || pkg.default_spec || pkg.pip_spec || "").replace(/"/g, "&quot;");
         const specInput = `<input
           id="spec-input-${pkg.key}"
           type="text"
           value="${specVal}"
-          placeholder="${(pkg.pip_spec || "pip spec or local path").replace(/"/g, "&quot;")}"
+          placeholder="${(pkg.default_spec || pkg.pip_spec || "pip spec or local path").replace(/"/g, "&quot;")}"
           style="font-family:var(--font);font-size:10px;width:240px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text);"
           onchange="setupSaveSpec('${pkg.key}', this.value)"
         />`;

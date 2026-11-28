@@ -1,15 +1,15 @@
-"""Dependency discovery and optional auto-install for PhaseForgeStudio.
+"""Dependency discovery and optional install for PhaseForgeStudio.
 
-Python packages are installed via ``uv pip install`` (or ``pip`` fallback)
-into the running interpreter's environment.  Binary tools (PAIPAI) cannot be
-auto-installed — their paths are configurable via config.json.
+Source-based packages (BLADE, MaterialsFramework, PhaseForgePlus) are cloned
+into ``<gui_root>/frameworks/<Name>/`` on first install if no existing path is
+configured.  Packages are installed as editable into the running interpreter.
 
-Config keys recognised (all optional):
+Config keys (all optional — auto-detected if absent):
 
-    paipai_binary            absolute path to paipai wrapper
-    blade_src                path to BLADE repo root (editable install preferred)
-    materialsframework_src   path to MaterialsFramework/src
-    phaseforgeplus_src       path to PhaseForgePlus/src
+    blade_src                path to BLADE repo root
+    materialsframework_src   path to MaterialsFramework root
+    phaseforgeplus_src       path to PhaseForgePlus root
+    paipai_binary            absolute path to paipai binary
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+_GUI_DIR = Path(__file__).parent.parent
+_FRAMEWORKS_DIR = _GUI_DIR / "frameworks"
 
 # ---------------------------------------------------------------------------
 # Python package registry
@@ -39,17 +42,23 @@ _PY_PACKAGES: dict[str, dict[str, Any]] = {
     },
     "materialsframework": {
         "import_name": "materialsframework",
-        "pip_spec": "materialsframework",  # on PyPI; source editable install preferred
+        "pip_spec": "materialsframework",
         "label": "MaterialsFramework",
         "optional": True,
         "source_key": "materialsframework_src",
+        "git_url": "https://github.com/dogusariturk/MaterialsFramework",
+        "frameworks_name": "MaterialsFramework",
+        "src_subdir": "src",  # installable root is repo/src/
     },
     "phaseforgeplus": {
         "import_name": "phaseforgeplus",
-        "pip_spec": "phaseforgeplus",  # on PyPI; source editable install preferred
+        "pip_spec": "phaseforgeplus",
         "label": "PhaseForgePlus",
         "optional": True,
         "source_key": "phaseforgeplus_src",
+        "git_url": "https://github.com/dogusariturk/PhaseForgePlus",
+        "frameworks_name": "PhaseForgePlus",
+        "src_subdir": "src",
     },
     "blade": {
         "import_name": "blade",
@@ -57,7 +66,9 @@ _PY_PACKAGES: dict[str, dict[str, Any]] = {
         "label": "BLADE",
         "optional": True,
         "source_key": "blade_src",
-        "no_deps": True,  # skip torch/pymatgen/etc — GUI only needs the package, not its ML stack
+        "git_url": "https://github.com/ichasekatz/BLADE",
+        "frameworks_name": "BLADE",
+        "no_deps": True,  # GUI doesn't need torch/pymatgen — skip heavy deps
     },
     "ase": {
         "import_name": "ase",
@@ -85,6 +96,57 @@ def _importable(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
+def _frameworks_path(key: str) -> Path:
+    """Canonical frameworks/ location for a source package."""
+    fname = _PY_PACKAGES.get(key, {}).get("frameworks_name", key)
+    return _FRAMEWORKS_DIR / fname
+
+
+def _guess_src(key: str, cfg: dict[str, Any] | None = None) -> str | None:
+    """Find the best source directory for a package, checking frameworks/ first."""
+    cfg = cfg or {}
+    meta = _PY_PACKAGES.get(key, {})
+    src_key = meta.get("source_key")
+
+    # 1. Explicit config override
+    if src_key and cfg.get(src_key):
+        p = Path(cfg[src_key])
+        if p.exists():
+            return str(p)
+
+    # 2. frameworks/<Name>/ — canonical GUI-local location
+    fw = _frameworks_path(key)
+    if fw.exists():
+        sub = meta.get("src_subdir")
+        candidate = fw / sub if sub else fw
+        if candidate.exists():
+            return str(candidate)
+        return str(fw)
+
+    # 3. Legacy locations (existing installs alongside GUI)
+    legacy: dict[str, list[Path]] = {
+        "blade": [
+            _GUI_DIR / "BLADE",
+            _GUI_DIR.parent / "BLADE",
+        ],
+        "materialsframework": [
+            _GUI_DIR / "MaterialsFramework" / "src",
+            _GUI_DIR / "MaterialsFramework",
+            _GUI_DIR.parent / "MaterialsFramework" / "src",
+        ],
+        "phaseforgeplus": [
+            _GUI_DIR / "PhaseForgePlus" / "src",
+            _GUI_DIR / "PhaseForgePlus",
+            _GUI_DIR.parent / "PhaseForgePlus" / "src",
+        ],
+    }
+    for path in legacy.get(key, []):
+        if path.exists():
+            return str(path)
+
+    return None
+
+
 def check_py_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Return status for every tracked Python package."""
     cfg = cfg or {}
@@ -98,40 +160,19 @@ def check_py_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             "pip_spec": meta.get("pip_spec"),
             "optional": meta.get("optional", True),
             "installable": meta.get("pip_spec") is not None,
+            "can_clone": bool(meta.get("git_url")),
         }
-        # source-based packages: check whether source dir is present
         src_key = meta.get("source_key")
         if src_key:
-            src = cfg.get(src_key) or _guess_src(key)
+            src = _guess_src(key, cfg)
             entry["source_path"] = src
             entry["source_found"] = bool(src and Path(src).exists())
-            # installable if source found OR PyPI spec available
-            entry["installable"] = bool(entry["source_found"]) or (meta.get("pip_spec") is not None)
+            entry["installable"] = True  # always installable: clone fallback
+            # Show frameworks/ path as the default spec when no source found yet
+            if not src:
+                entry["default_spec"] = str(_frameworks_path(key))
         out.append(entry)
     return out
-
-
-def _guess_src(key: str) -> str | None:
-    """Try to find a source directory adjacent to the GUI directory."""
-    gui_dir = Path(__file__).parent.parent
-    candidates: dict[str, list[Path]] = {
-        "blade": [
-            gui_dir.parent / "BLADE",
-            gui_dir.parent.parent / "BLADE",
-        ],
-        "materialsframework": [
-            gui_dir / "MaterialsFramework" / "src",
-            gui_dir.parent / "MaterialsFramework" / "src",
-        ],
-        "phaseforgeplus": [
-            gui_dir / "PhaseForgePlus" / "src",
-            gui_dir.parent / "PhaseForgePlus" / "src",
-        ],
-    }
-    for path in candidates.get(key, []):
-        if path.exists():
-            return str(path)
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -196,75 +237,37 @@ def check_binary_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any
 
 
 def _uv_or_pip() -> list[str]:
-    """Return pip install prefix that targets the running interpreter's environment."""
+    """Return pip install prefix targeting the running interpreter's environment."""
     uv = shutil.which("uv")
     if uv:
-        # Pin to sys.executable so uv installs into the venv running the server,
-        # not whatever uv considers its default environment.
         return [uv, "pip", "install", "--python", sys.executable]
     return [sys.executable, "-m", "pip", "install"]
 
 
-def install_package(
-    key: str,
-    cfg: dict[str, Any] | None = None,
-    override_spec: str | None = None,
-) -> dict[str, Any]:
-    """Install a Python package by registry key.  Returns {ok, output, error}.
+def _clone_repo(git_url: str, dest: Path) -> dict[str, Any]:
+    """Clone *git_url* into *dest*.  Returns {ok, output, error}."""
+    _FRAMEWORKS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth=1", git_url, str(dest)],
+            capture_output=True, text=True, timeout=300,
+        )
+        ok = result.returncode == 0
+        return {
+            "ok": ok,
+            "output": result.stdout + result.stderr,
+            "error": result.stderr if not ok else None,
+            "cmd": f"git clone --depth=1 {git_url} {dest}",
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "git clone timed out (5 min)"}
+    except FileNotFoundError:
+        return {"ok": False, "error": "git not found on PATH"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
-    If *override_spec* is supplied it is used directly: if it looks like an
-    existing local path an editable install is attempted; otherwise it is
-    treated as a pip spec (PyPI name, git URL, etc.).
-    """
-    cfg = cfg or {}
-    meta = _PY_PACKAGES.get(key)
-    if not meta:
-        return {"ok": False, "error": f"unknown package key: {key!r}"}
 
-    # -- override path / spec from caller (UI editable field) -----------------
-    if override_spec:
-        override_spec = override_spec.strip()
-        op = Path(override_spec)
-        if op.exists() and op.is_dir():
-            install_root = op if (op / "pyproject.toml").exists() or (op / "setup.py").exists() else op.parent
-            cmd = [*_uv_or_pip(), "-e", str(install_root)]
-        else:
-            cmd = [*_uv_or_pip(), override_spec]
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-            ok = result.returncode == 0
-            return {
-                "ok": ok,
-                "output": result.stdout + result.stderr,
-                "error": result.stderr if not ok else None,
-                "cmd": " ".join(cmd),
-            }
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "error": "install timed out (300 s)"}
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-    pip_spec = meta.get("pip_spec")
-    src_key = meta.get("source_key")
-
-    no_deps = meta.get("no_deps", False)
-    no_deps_flag = ["--no-deps"] if no_deps else []
-
-    if src_key:
-        src = cfg.get(src_key) or _guess_src(key)
-        if src and Path(src).exists():
-            src_path = Path(src)
-            install_root = src_path if (src_path / "pyproject.toml").exists() or (src_path / "setup.py").exists() else src_path.parent
-            cmd = [*_uv_or_pip(), *no_deps_flag, "-e", str(install_root)]
-        elif pip_spec:
-            cmd = [*_uv_or_pip(), *no_deps_flag, pip_spec]
-        else:
-            return {"ok": False, "error": f"source not found for {key} and no PyPI spec available; set {src_key!r} in config"}
-    elif pip_spec:
-        cmd = [*_uv_or_pip(), *no_deps_flag, pip_spec]
-    else:
-        return {"ok": False, "error": f"no install spec for {key}"}
-
+def _run_pip(cmd: list[str]) -> dict[str, Any]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         ok = result.returncode == 0
@@ -278,6 +281,77 @@ def install_package(
         return {"ok": False, "error": "install timed out (30 min)"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def install_package(
+    key: str,
+    cfg: dict[str, Any] | None = None,
+    override_spec: str | None = None,
+) -> dict[str, Any]:
+    """Install a package by registry key.  Returns {ok, output, error, cmd}.
+
+    If *override_spec* is given it is used directly (local path → editable
+    install; anything else → pip spec).  Otherwise the registry + config
+    determine the source: existing local path → editable; no path found →
+    clone from git_url into frameworks/ then editable; pip_spec fallback.
+    """
+    cfg = cfg or {}
+    meta = _PY_PACKAGES.get(key)
+    if not meta:
+        return {"ok": False, "error": f"unknown package key: {key!r}"}
+
+    no_deps_flag = ["--no-deps"] if meta.get("no_deps") else []
+
+    # -- explicit override from UI field --------------------------------------
+    if override_spec:
+        override_spec = override_spec.strip()
+        op = Path(override_spec)
+        if op.exists() and op.is_dir():
+            root = op if (op / "pyproject.toml").exists() or (op / "setup.py").exists() else op.parent
+            cmd = [*_uv_or_pip(), *no_deps_flag, "-e", str(root)]
+        else:
+            cmd = [*_uv_or_pip(), *no_deps_flag, override_spec]
+        return _run_pip(cmd)
+
+    pip_spec = meta.get("pip_spec")
+    src_key = meta.get("source_key")
+
+    # -- source-based package -------------------------------------------------
+    if src_key:
+        src = _guess_src(key, cfg)
+
+        # No source found — try to clone into frameworks/
+        if not src:
+            git_url = meta.get("git_url")
+            if git_url:
+                fw = _frameworks_path(key)
+                clone_result = _clone_repo(git_url, fw)
+                if not clone_result["ok"]:
+                    return clone_result
+                # After clone, resolve install root
+                sub = meta.get("src_subdir")
+                src = str(fw / sub if sub and (fw / sub).exists() else fw)
+            elif pip_spec:
+                return _run_pip([*_uv_or_pip(), *no_deps_flag, pip_spec])
+            else:
+                return {"ok": False, "error": f"no source and no git_url/pip_spec for {key}"}
+
+        src_path = Path(src)
+        install_root = (
+            src_path
+            if (src_path / "pyproject.toml").exists() or (src_path / "setup.py").exists()
+            else src_path.parent
+        )
+        cmd = [*_uv_or_pip(), *no_deps_flag, "-e", str(install_root)]
+        result = _run_pip(cmd)
+        result["cloned_to"] = str(_frameworks_path(key)) if not _guess_src(key, cfg) else None
+        return result
+
+    # -- simple pip package ---------------------------------------------------
+    if pip_spec:
+        return _run_pip([*_uv_or_pip(), *no_deps_flag, pip_spec])
+
+    return {"ok": False, "error": f"no install spec for {key}"}
 
 
 def all_status(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
