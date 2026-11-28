@@ -201,12 +201,44 @@ def _uv_or_pip() -> list[str]:
     return [sys.executable, "-m", "pip", "install"]
 
 
-def install_package(key: str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Install a Python package by registry key.  Returns {ok, output, error}."""
+def install_package(
+    key: str,
+    cfg: dict[str, Any] | None = None,
+    override_spec: str | None = None,
+) -> dict[str, Any]:
+    """Install a Python package by registry key.  Returns {ok, output, error}.
+
+    If *override_spec* is supplied it is used directly: if it looks like an
+    existing local path an editable install is attempted; otherwise it is
+    treated as a pip spec (PyPI name, git URL, etc.).
+    """
     cfg = cfg or {}
     meta = _PY_PACKAGES.get(key)
     if not meta:
         return {"ok": False, "error": f"unknown package key: {key!r}"}
+
+    # -- override path / spec from caller (UI editable field) -----------------
+    if override_spec:
+        override_spec = override_spec.strip()
+        op = Path(override_spec)
+        if op.exists() and op.is_dir():
+            install_root = op if (op / "pyproject.toml").exists() or (op / "setup.py").exists() else op.parent
+            cmd = [*_uv_or_pip(), "-e", str(install_root)]
+        else:
+            cmd = [*_uv_or_pip(), override_spec]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            ok = result.returncode == 0
+            return {
+                "ok": ok,
+                "output": result.stdout + result.stderr,
+                "error": result.stderr if not ok else None,
+                "cmd": " ".join(cmd),
+            }
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "install timed out (300 s)"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     pip_spec = meta.get("pip_spec")
     src_key = meta.get("source_key")

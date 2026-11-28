@@ -84,17 +84,7 @@ header h1 span { color: var(--text2); font-weight: 400; }
 .dot.error   { background: var(--red); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 
-/* ── Stage pills ────────────────────────────────────────── */
-#stage-bar {
-  display: flex;
-  gap: 4px;
-  flex: 1;
-  overflow-x: auto;
-  scrollbar-width: none;
-  align-items: center;
-  min-width: 0;
-}
-#stage-bar::-webkit-scrollbar { display: none; }
+/* ── Stage dots (inline on tab/column headers) ──────────── */
 .tab-stage-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   margin-left: 5px; vertical-align: middle; background: transparent;
@@ -102,23 +92,6 @@ header h1 span { color: var(--text2); font-weight: 400; }
 }
 .tab-stage-dot.running { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 .tab-stage-dot.done    { background: var(--green); }
-.stage-pill {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg3);
-  font-family: var(--font);
-  font-size: 10px;
-  color: var(--text2);
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: border-color .2s, color .2s;
-}
-.stage-pill.running { border-color: var(--accent); color: var(--accent); }
-.stage-pill.done    { border-color: var(--green);  color: var(--green); }
 
 header .spacer { flex: 0 0 4px; }
 #live-btn {
@@ -517,11 +490,13 @@ select option { background: var(--bg3); }
     <div style="padding:4px 12px 2px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);margin-bottom:4px;">Job History</div>
     <div id="job-history-list" style="font-family:var(--font);font-size:11px;"></div>
   </div>
-  <span id="refresh-badge" style="font-family:var(--font);font-size:10px;color:var(--text2);flex-shrink:0;">— —</span>
-  <button class="btn" onclick="refreshAll()" title="Refresh outputs">↻ Refresh</button>
-  <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="font-size:12px;padding:4px 12px;">⬤ Live</button>
-  <button class="btn danger" id="btn-stop" onclick="stopJob()" disabled>Stop</button>
-  <button class="btn primary" id="btn-run" onclick="runJob()">Run</button>
+  <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+    <span id="refresh-badge" style="font-family:var(--font);font-size:10px;color:var(--text2);">— —</span>
+    <button class="btn" onclick="refreshAll()" title="Refresh outputs">↻ Refresh</button>
+    <button id="live-btn" onclick="toggleLiveMode()" title="Follow live relaxation" style="font-size:12px;padding:4px 12px;">⬤ Live</button>
+    <button class="btn danger" id="btn-stop" onclick="stopJob()" disabled>Stop</button>
+    <button class="btn primary" id="btn-run" onclick="runJob()">Run</button>
+  </div>
 </header>
 
 <!-- ── Home / Info workspace ─────────────────────────────────────────────── -->
@@ -534,7 +509,7 @@ select option { background: var(--bg3); }
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-bottom:10px;">Quick Start</div>
       <ol style="margin:0;padding-left:18px;font-size:12px;line-height:2;color:var(--text);">
-        <li>Go to <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('setup')">Setup</b> → install any missing packages (orchid-mcp, pycalphad, etc.)</li>
+        <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('setup')">Setup</b> — missing packages install automatically; add local paths here</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="switchWorkspace('mf')">Materials Framework</b> → pick elements + lattices → run SQS generation</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="toggleWsGroup(event,'orchid-group-menu')">ORCHID</b> → search for experimental data on your system</li>
         <li>Open <b style="cursor:pointer;color:var(--accent);" onclick="closeWsGroup('pf-group-menu');switchWorkspace('pfp')">PhaseForgePlus</b> → fit TDB using computed + experimental data</li>
@@ -1168,9 +1143,14 @@ select option { background: var(--bg3); }
 <div id="setup-view" style="display:none;flex:1;overflow-y:auto;padding:20px;flex-direction:column;gap:16px;">
   <div style="font-size:1.1em;font-weight:600;margin-bottom:4px;">Environment Setup</div>
   <div style="color:var(--text2);font-size:12px;margin-bottom:8px;">
-    PhaseForge Studio auto-detects installed packages and binaries.
-    Missing Python packages can be installed here. Binary tools (PAIPAI) must be built from source.
-    Path overrides can be set in <code>config.json</code>.
+    Missing packages auto-install on server startup. Edit the path/spec field and click Install to override.
+    Binary tools (PAIPAI) must be built from source.
+  </div>
+
+  <!-- Startup auto-install banner -->
+  <div id="setup-startup-banner" style="display:none;padding:8px 12px;background:rgba(79,140,255,0.1);border:1px solid var(--accent);border-radius:5px;font-size:11px;">
+    <strong style="color:var(--accent);">Auto-installing on startup:</strong>
+    <span id="setup-startup-list"></span>
   </div>
 
   <!-- Python packages table -->
@@ -1180,7 +1160,7 @@ select option { background: var(--bg3); }
       <tr style="background:var(--bg2);color:var(--text2);">
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Package</th>
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Status</th>
-        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Install spec</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);">Path / pip spec</th>
         <th style="padding:5px 8px;border-bottom:1px solid var(--border);"></th>
       </tr>
     </thead>
@@ -2057,6 +2037,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadPhaseDiagrams();
   initAnalyzers();
   initMdCalculators();
+  // Start polling startup auto-install jobs immediately (shows banner in Setup tab)
+  setupCheckStartupJobs();
 });
 
 // ── Pipeline Maker ──────────────────────────────────────────
@@ -2357,7 +2339,7 @@ function _applyWorkspaceView(workspace) {
   if (workspace === "benchmark") initBenchmarkWorkspace();
   if (workspace === "sage") initSageWorkspace();
   if (workspace === "pipeline") initPipelineWorkspace();
-  if (workspace === "setup") setupRefresh();
+  if (workspace === "setup") { setupRefresh(); setupCheckStartupJobs(); }
 }
 
 // ── PhaseForge (sqscal) workspace ──────────────────────────
@@ -5591,11 +5573,40 @@ async function bmPopulateTemplates() {
 
 // ── Setup / Dependencies workspace ────────────────────────────────────────
 
+async function setupCheckStartupJobs() {
+  try {
+    const resp = await fetch("/api/deps/startup_jobs");
+    const jobs = await resp.json();
+    const banner = document.getElementById("setup-startup-banner");
+    const list = document.getElementById("setup-startup-list");
+    if (!banner || !list) return;
+    const keys = Object.keys(jobs);
+    if (!keys.length) { banner.style.display = "none"; return; }
+    const running = keys.filter(k => jobs[k].status === "running");
+    const done = keys.filter(k => jobs[k].status === "done" && jobs[k].result?.ok);
+    const failed = keys.filter(k => jobs[k].status === "done" && !jobs[k].result?.ok);
+    if (!running.length && !failed.length && done.length) {
+      banner.style.display = "none";
+      setupRefresh();
+      return;
+    }
+    banner.style.display = "block";
+    list.innerHTML = keys.map(k => {
+      const j = jobs[k];
+      const icon = j.status === "running" ? "⏳" : (j.result?.ok ? "✓" : "✗");
+      const col = j.status === "running" ? "var(--accent)" : (j.result?.ok ? "var(--green)" : "var(--red)");
+      return `<span style="color:${col};margin-right:10px;">${icon} ${j.label}</span>`;
+    }).join("");
+    if (running.length) setTimeout(setupCheckStartupJobs, 3000);
+    else setupRefresh();
+  } catch {}
+}
+
 async function setupRefresh() {
   const pkgTbody = document.getElementById("setup-pkg-tbody");
   const binTbody = document.getElementById("setup-bin-tbody");
   const hintsEl = document.getElementById("setup-hints");
-  if (pkgTbody) pkgTbody.innerHTML = '<tr><td colspan="4" style="padding:8px;color:var(--text2);">Loading…</td></tr>';
+  if (pkgTbody) pkgTbody.innerHTML = '<tr><td colspan="5" style="padding:8px;color:var(--text2);">Loading…</td></tr>';
   try {
     const resp = await fetch("/api/deps/status");
     const data = await resp.json();
@@ -5605,24 +5616,30 @@ async function setupRefresh() {
       pkgTbody.innerHTML = "";
       for (const pkg of (data.packages || [])) {
         const tr = document.createElement("tr");
+        tr.id = `pkg-row-${pkg.key}`;
         tr.style.borderBottom = "1px solid var(--border)";
         const statusHtml = pkg.available
           ? `<span style="color:var(--green);">✓ installed</span>`
           : `<span style="color:var(--red);">✗ missing</span>`;
-        const specHtml = pkg.source_found
-          ? `<span style="color:var(--text2);font-family:var(--font);font-size:10px;">${pkg.source_path || ""}</span>`
-          : (pkg.pip_spec
-            ? `<code style="font-size:10px;">${pkg.pip_spec}</code>`
-            : `<span style="color:var(--text2);">source required</span>`);
-        const installBtn = (!pkg.available && pkg.installable)
-          ? `<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="setupInstall('${pkg.key}', this)">Install</button>`
-          : (pkg.source_found && !pkg.available
-            ? `<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="setupInstall('${pkg.key}', this)">Editable install</button>`
-            : "");
+        // Editable spec input — shows source_path if found, else pip_spec
+        const specVal = (pkg.source_path || pkg.pip_spec || "").replace(/"/g, "&quot;");
+        const specInput = `<input
+          id="spec-input-${pkg.key}"
+          type="text"
+          value="${specVal}"
+          placeholder="${pkg.pip_spec || "pip spec or local path"}"
+          style="font-family:var(--font);font-size:10px;width:260px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:2px 5px;color:var(--text);"
+          onchange="setupSaveSpec('${pkg.key}', this.value)"
+        />`;
+        const installBtn = pkg.installable
+          ? `<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="setupInstall('${pkg.key}', this)">
+               ${pkg.available ? "Reinstall" : "Install"}
+             </button>`
+          : "";
         tr.innerHTML = `
           <td style="padding:5px 8px;">${pkg.label}</td>
           <td style="padding:5px 8px;">${statusHtml}</td>
-          <td style="padding:5px 8px;">${specHtml}</td>
+          <td style="padding:5px 8px;">${specInput}</td>
           <td style="padding:5px 8px;">${installBtn}</td>`;
         pkgTbody.appendChild(tr);
       }
@@ -5663,16 +5680,30 @@ async function setupRefresh() {
   }
 }
 
+async function setupSaveSpec(key, value) {
+  try {
+    await fetch("/api/deps/set_source", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({key, local_path: value}),
+    });
+  } catch {}
+}
+
 async function setupInstall(key, btn) {
   const logEl = document.getElementById("setup-install-log");
+  const specInput = document.getElementById(`spec-input-${key}`);
+  const localPath = specInput ? specInput.value.trim() : "";
   if (btn) { btn.disabled = true; btn.textContent = "Installing…"; }
   if (logEl) { logEl.style.display = "block"; logEl.textContent = `Installing ${key}… (this may take a minute)\n`; }
   let jobId = null;
   try {
+    const body = {key};
+    if (localPath) body.local_path = localPath;
     const resp = await fetch("/api/deps/install", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({key}),
+      body: JSON.stringify(body),
     });
     const start = await resp.json();
     if (start.error) { if (logEl) logEl.textContent += start.error; return; }

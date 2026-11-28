@@ -143,7 +143,7 @@ from phaseforge_studio.benchmark_adapter import (  # noqa: E402
 )
 from phaseforge_studio.benchmark_templates import list_templates, apply_template  # noqa: E402
 from phaseforge_studio.benchmark_report import build_json_export, build_text_report  # noqa: E402
-from phaseforge_studio.deps_manager import all_status as deps_all_status, install_package as deps_install  # noqa: E402
+from phaseforge_studio.deps_manager import all_status as deps_all_status, install_package as deps_install, check_py_status as _deps_check_py  # noqa: E402
 from phaseforge_studio.pipeline_maker import (  # noqa: E402
     STEP_TYPES as pipeline_step_types,
     cancel_pipeline,
@@ -184,13 +184,32 @@ _pfp_job = PfpJob()
 # ── Async install job registry ────────────────────────────────────────────────
 _install_jobs: dict[str, dict] = {}  # job_id → {status, result}
 _install_lock = threading.Lock()
+_startup_jobs: dict[str, dict] = {}  # pkg_key → {job_id, label}
 
 
-def _run_install_job(job_id: str, key: str, cfg: dict) -> None:
-    result = deps_install(key, cfg)
+def _run_install_job(
+    job_id: str, key: str, cfg: dict, override_spec: str | None = None
+) -> None:
+    result = deps_install(key, cfg, override_spec)
     with _install_lock:
         _install_jobs[job_id]["status"] = "done"
         _install_jobs[job_id]["result"] = result
+
+
+def _auto_install_on_startup(cfg: dict) -> None:
+    """Install missing installable packages in background threads on server start."""
+    from phaseforge_studio.deps_manager import check_py_status as _check
+    missing = [p for p in _check(cfg) if not p["available"] and p["installable"]]
+    for pkg in missing:
+        job_id = str(uuid.uuid4())[:8]
+        with _install_lock:
+            _install_jobs[job_id] = {"status": "running", "result": None}
+            _startup_jobs[pkg["key"]] = {"job_id": job_id, "label": pkg["label"]}
+        t = threading.Thread(
+            target=_run_install_job, args=(job_id, pkg["key"], cfg), daemon=True
+        )
+        t.start()
+        print(f"  auto-installing: {pkg['label']} (job {job_id})")
 
 
 def _fmt_or_blank(value: float | None, digits: int = 6) -> str:
@@ -471,6 +490,20 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._json({"error": "unknown job"}, 404)
                 return
             self._json({"job_id": job_id, "status": job["status"], "result": job["result"]})
+
+        elif path == "/api/deps/startup_jobs":
+            with _install_lock:
+                out = {}
+                for key, info in _startup_jobs.items():
+                    jid = info["job_id"]
+                    job = _install_jobs.get(jid, {})
+                    out[key] = {
+                        "job_id": jid,
+                        "label": info["label"],
+                        "status": job.get("status", "unknown"),
+                        "result": job.get("result"),
+                    }
+            self._json(out)
 
         # ── Pipeline Maker GET endpoints ─────────────────────────────────────
         elif path == "/api/pipeline/steps":
@@ -1343,6 +1376,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         elif path == "/api/deps/install":
             body = self._body_json()
             key = body.get("key", "")
+            local_path = (body.get("local_path") or "").strip() or None
             if not key:
                 self._json({"error": "key required"}, 400)
                 return
@@ -1351,10 +1385,39 @@ class StudioHandler(BaseHTTPRequestHandler):
             with _install_lock:
                 _install_jobs[job_id] = {"status": "running", "result": None}
             t = threading.Thread(
-                target=_run_install_job, args=(job_id, key, dict(self.cfg)), daemon=True
+                target=_run_install_job,
+                args=(job_id, key, dict(self.cfg), local_path),
+                daemon=True,
             )
             t.start()
             self._json({"ok": True, "job_id": job_id, "status": "running"})
+
+        elif path == "/api/deps/set_source":
+            body = self._body_json()
+            key = body.get("key", "")
+            local_path = (body.get("local_path") or "").strip()
+            if not key:
+                self._json({"error": "key required"}, 400)
+                return
+            from phaseforge_studio.deps_manager import _PY_PACKAGES as _pkgs
+            meta = _pkgs.get(key)
+            src_key = meta.get("source_key") if meta else None
+            if not src_key:
+                # No source_key — store under key_src convention for pip spec override
+                src_key = f"{key}_pip_spec_override"
+            # Update in-memory config
+            self.cfg[src_key] = local_path
+            StudioHandler.cfg[src_key] = local_path
+            # Persist to config.json
+            try:
+                cfg_data: dict = {}
+                if self.config_path.exists():
+                    cfg_data = json.loads(self.config_path.read_text())
+                cfg_data[src_key] = local_path
+                self.config_path.write_text(json.dumps(cfg_data, indent=2))
+                self._json({"ok": True, "src_key": src_key, "value": local_path})
+            except Exception as exc:
+                self._json({"error": str(exc)})
 
         # ── Pipeline Maker POST endpoints ────────────────────────────────────
         elif path == "/api/pipeline/start":
@@ -2836,6 +2899,9 @@ def main() -> None:
 
     StudioHandler.config_path = args.config
     StudioHandler.cfg = cfg
+
+    # Auto-install missing packages in background (non-blocking)
+    _auto_install_on_startup(cfg)
 
     # Wire config-specified binary overrides
     set_paipai_override(cfg.get("paipai_binary"))
