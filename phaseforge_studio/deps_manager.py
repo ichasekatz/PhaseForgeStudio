@@ -197,13 +197,41 @@ _BINARY_TOOLS: dict[str, dict[str, Any]] = {
             "# installs to ~/bin/; add ~/bin to PATH or set paipai_binary in config"
         ),
     },
+    "atat": {
+        "label": "ATAT (mcsqs/sqs2tdb/corrdump)",
+        # config_key stores the bin directory; _find_binary resolves mcsqs inside it
+        "config_key": "atat_bin_dir",
+        "check_binary": "mcsqs",
+        "search_names": ["mcsqs"],
+        "search_paths": [
+            Path.home() / ".local" / "bin" / "mcsqs",
+            Path.home() / "bin" / "mcsqs",
+            Path("/usr/local/bin/mcsqs"),
+        ],
+        "build_hint": (
+            "# Download ATAT source from https://www.brown.edu/research/labs/avdw/atat/\n"
+            "tar -xzf atat.tar.gz && cd atat\n"
+            "make\n"
+            "# Copy binaries to ~/.local/bin/ or add atat/src to PATH\n"
+            "cp src/mcsqs src/sqs2tdb src/corrdump ~/.local/bin/\n"
+            "# Or set atat_bin_dir in config to the directory containing the binaries"
+        ),
+    },
 }
 
 
 def _find_binary(meta: dict[str, Any], cfg: dict[str, Any]) -> str | None:
     override = cfg.get(meta["config_key"])
-    if override and Path(override).exists():
-        return override
+    if override:
+        p = Path(override).expanduser()
+        check = meta.get("check_binary")
+        if check and p.is_dir():
+            # config_key is a bin directory — resolve the representative binary
+            candidate = p / check
+            if candidate.exists():
+                return str(candidate)
+        elif p.exists():
+            return str(p)
     for name in meta.get("search_names", []):
         found = shutil.which(name)
         if found:
