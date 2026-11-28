@@ -244,23 +244,32 @@ def _uv_or_pip() -> list[str]:
     return [sys.executable, "-m", "pip", "install"]
 
 
-def _clone_repo(git_url: str, dest: Path) -> dict[str, Any]:
-    """Clone *git_url* into *dest*.  Returns {ok, output, error}."""
+def _clone_or_pull(git_url: str, dest: Path) -> dict[str, Any]:
+    """Clone *git_url* into *dest*, or pull latest if *dest* already exists."""
     _FRAMEWORKS_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        result = subprocess.run(
-            ["git", "clone", "--depth=1", git_url, str(dest)],
-            capture_output=True, text=True, timeout=300,
-        )
+        if (dest / ".git").exists():
+            # Already cloned — pull latest
+            result = subprocess.run(
+                ["git", "-C", str(dest), "pull", "--ff-only"],
+                capture_output=True, text=True, timeout=120,
+            )
+            cmd = f"git -C {dest} pull --ff-only"
+        else:
+            result = subprocess.run(
+                ["git", "clone", "--depth=1", git_url, str(dest)],
+                capture_output=True, text=True, timeout=300,
+            )
+            cmd = f"git clone --depth=1 {git_url} {dest}"
         ok = result.returncode == 0
         return {
             "ok": ok,
             "output": result.stdout + result.stderr,
             "error": result.stderr if not ok else None,
-            "cmd": f"git clone --depth=1 {git_url} {dest}",
+            "cmd": cmd,
         }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "git clone timed out (5 min)"}
+        return {"ok": False, "error": "git operation timed out"}
     except FileNotFoundError:
         return {"ok": False, "error": "git not found on PATH"}
     except Exception as exc:
@@ -325,7 +334,7 @@ def install_package(
             git_url = meta.get("git_url")
             if git_url:
                 fw = _frameworks_path(key)
-                clone_result = _clone_repo(git_url, fw)
+                clone_result = _clone_or_pull(git_url, fw)
                 if not clone_result["ok"]:
                     return clone_result
                 # After clone, resolve install root
