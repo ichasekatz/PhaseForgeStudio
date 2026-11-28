@@ -195,9 +195,12 @@ def check_binary_status(cfg: dict[str, Any] | None = None) -> list[dict[str, Any
 
 
 def _uv_or_pip() -> list[str]:
+    """Return pip install prefix that targets the running interpreter's environment."""
     uv = shutil.which("uv")
     if uv:
-        return [uv, "pip", "install"]
+        # Pin to sys.executable so uv installs into the venv running the server,
+        # not whatever uv considers its default environment.
+        return [uv, "pip", "install", "--python", sys.executable]
     return [sys.executable, "-m", "pip", "install"]
 
 
@@ -227,7 +230,7 @@ def install_package(
         else:
             cmd = [*_uv_or_pip(), override_spec]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
             ok = result.returncode == 0
             return {
                 "ok": ok,
@@ -262,7 +265,7 @@ def install_package(
         return {"ok": False, "error": f"no install spec for {key}"}
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         ok = result.returncode == 0
         return {
             "ok": ok,
@@ -271,7 +274,7 @@ def install_package(
             "cmd": " ".join(cmd),
         }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "install timed out (300 s)"}
+        return {"ok": False, "error": "install timed out (30 min)"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
